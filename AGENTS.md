@@ -21,6 +21,42 @@ These instructions apply to the entire repository.
 - Separate scientific-model changes from presentation/UI changes whenever practical.
 - If a proposed change affects numerical correctness, explain the expected physical consequence before implementation.
 
+## RocketSim Specialist Review Policy
+
+RocketSim uses project-scoped Codex specialist agents for independent scientific review.
+
+### `physics_reviewer`
+
+Invoke for changes involving forces, acceleration, motion equations, gravity, thrust, mass, trajectories, physical constants, or physical events and phase transitions. Invoke it for drag, atmosphere, wind, or propulsion when those domains become active in later milestones.
+
+### `numerical_reviewer`
+
+Invoke for changes involving numerical integration, timestep handling, interpolation, event timing, numerical solvers, convergence, or floating-point tolerances.
+
+### `test_reviewer`
+
+Invoke before completing any milestone that changes simulation behavior.
+
+### Write Authority
+
+Specialist reviewers are read-only unless a future approved prompt explicitly changes that rule. The parent Codex agent owns implementation, integration, and final decisions. Do not allow multiple agents to modify overlapping implementation files concurrently.
+
+### Review Workflow
+
+Relevant specialists may investigate independently and in parallel. The parent agent must:
+
+1. collect relevant specialist findings
+2. reconcile disagreements
+3. decide which findings require action
+4. implement or correct the code itself
+5. obtain post-implementation review
+6. resolve blocking findings
+7. run required validation
+8. audit the final diff
+9. commit only after review and validation gates pass
+
+Keep detailed reviewer behavior in `.codex/agents/*.toml`. Keep scientific truth in `docs/PHYSICS_MODEL.md` and validation methodology in `docs/VALIDATION.md`.
+
 ## Scientific Modeling Policy
 
 - Every simulated force or state transition must have a clearly stated physical meaning.

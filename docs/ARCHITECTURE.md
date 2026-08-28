@@ -1,255 +1,82 @@
 # Software Architecture
 
-## Objective
+## Implemented boundary
 
-The simulator should be designed so that the physics can run independently of Pygame. Pygame should be a visualization and input layer, not the physics engine itself.
-
-This separation will make it easier to:
-
-- test the physics,
-- run simulations faster than real time,
-- run parameter sweeps,
-- compare models,
-- add alternative visualizations later,
-- and potentially reuse the simulator for autonomous-control experiments.
-
----
-
-## Proposed Components
-
-### `main.py`
-
-Responsibilities:
-
-- Initialize Pygame.
-- Create the simulation.
-- Run the application loop.
-- Handle top-level user input.
-- Coordinate physics updates and rendering.
-
-It should contain as little physics logic as possible.
-
-### `simulation.py`
-
-Responsibilities:
-
-- Own simulation time.
-- Advance the simulation by a timestep.
-- Coordinate forces and environment.
-- Determine when a flight starts and ends.
-- Record trajectory/history data.
-
-Possible interface:
-
-```python
-simulation.step(dt)
-simulation.reset()
-simulation.is_finished
-```
-
-### `rocket.py`
-
-Responsibilities:
-
-- Store rocket physical properties.
-- Store current rocket state.
-- Update state from calculated forces.
-
-Possible properties:
+The simulator separates scientific state evolution from Pygame presentation:
 
 ```text
-position
-velocity
-mass
-dry_mass
-reference_area
-drag_coefficient
+Pygame events + frame time
+            |
+            v
+app.py -> Simulation.advance_elapsed()
+            |
+            v
+fixed-step accumulator -> simulation.py lifecycle/events
+            |
+            v
+physics.py forces + semi-implicit Euler
+            |
+            v
+immutable RocketState history
+            |
+            v
+rendering.py world transform + drawing + telemetry
 ```
 
-Later:
+`config.py`, `physics.py`, and `simulation.py` do not import Pygame. `app.py` owns window creation, input, the display clock, and the outer loop. `rendering.py` owns pixels, fonts, drawing, and the +y-up to +y-down transform.
 
-```text
-angle
-angular_velocity
-moment_of_inertia
-center_of_mass
-center_of_pressure
-```
-
-### `motor.py`
-
-Responsibilities:
-
-- Motor burn duration.
-- Thrust as a function of time.
-- Propellant mass.
-- Mass flow.
-
-Possible interface:
-
-```python
-motor.thrust_at(t)
-motor.propellant_mass_at(t)
-motor.is_burning(t)
-```
-
-### `environment.py`
-
-Responsibilities:
-
-- Gravity.
-- Air density.
-- Wind.
-- Atmospheric properties.
-
-Possible interface:
-
-```python
-environment.gravity_at(position)
-environment.air_density_at(altitude)
-environment.wind_at(altitude, time)
-```
-
-### `renderer.py`
-
-Responsibilities:
-
-- Convert world coordinates to screen coordinates.
-- Draw rocket.
-- Draw trajectory.
-- Draw ground.
-- Draw telemetry.
-- Draw force vectors when enabled.
-
-The renderer must not modify physical state.
+## Module responsibilities
 
 ### `config.py`
 
-Responsibilities:
+- immutable, validated `SimulationConfig`
+- neutral immutable `Vector2`
+- SI-valued defaults and initial conditions
 
-- Store initial simulation parameters.
-- Keep tuning values out of physics code.
+### `physics.py`
 
-Example configuration:
+- gravitational and thrust force equations
+- half-open burn predicate
+- net acceleration
+- one constant-acceleration semi-implicit Euler segment
 
-```python
-ROCKET_MASS_KG = 1.5
-THRUST_N = 35.0
-BURN_TIME_S = 1.0
-LAUNCH_ANGLE_DEG = 85.0
-PHYSICS_DT = 0.01
-```
+It does not own wall time, phases, events, or drawing.
 
-Eventually, replace or supplement this with JSON/TOML experiment configuration files.
+### `simulation.py`
 
----
+- immutable `RocketState` samples and flight phases
+- launch, pause/resume, reset, and terminal lifecycle
+- fixed-timestep wall-time accumulator
+- exact burnout split and deterministic ground-crossing handling
+- physics step count and trajectory history
 
-## Main Loop
+Configuration is the source of constant mass. Every recorded state repeats that value so the invariant is observable.
 
-Conceptually:
+### `rendering.py`
 
-```text
-initialize
+- world metres to screen pixels
+- ground, trajectory, rocket, and telemetry drawing
+- no mutation of simulation state
 
-while running:
-    process user input
+### `app.py` and `__main__.py`
 
-    accumulate real elapsed time
+- `python -m rocket_sim` entry point
+- Pygame initialization and shutdown
+- `SPACE`, `R`, and `ESC` controls
+- bounded `run(max_frames=...)` path for dummy-display smoke validation
 
-    while accumulated_time >= physics_dt:
-        simulation.step(physics_dt)
-        accumulated_time -= physics_dt
+## Clock contract
 
-    renderer.draw(simulation)
-    display frame
-```
+Elapsed unpaused display time is accumulated with compensated floating-point summation. The simulation consumes complete fixed `physics_dt_s` intervals and retains only a fractional remainder. It never advances a representably subthreshold interval and has no substep cap that drops elapsed time. Pre-launch, paused, and post-landing calls do not add elapsed time; reset clears the remainder, compensation, and step counter.
 
-This fixed-timestep structure prevents simulation results from changing significantly when graphical frame rate changes.
+No absolute comparison tolerance creates simulation time. Burnout is handled by explicit segment endpoints, not an epsilon-expanded burn interval.
 
----
+## State and event contract
 
-## Data Flow
+The flight phases are ready, powered, coast, and landed. Pause is an application lifecycle state layered over the physical powered/coast phase. State acceleration describes the instantaneous force model at the state's resulting time, so a state exactly at burnout is coast even if the preceding interval was powered.
 
-```text
-User Input
-    ↓
-Configuration
-    ↓
-Simulation
-    ↓
-Rocket + Motor + Environment
-    ↓
-Force Calculation
-    ↓
-Numerical Integration
-    ↓
-Updated Rocket State
-    ↓
-Renderer
-    ↓
-Pygame Display
-```
+Burnout and landing are handled inside the simulation boundary. A terminal state is the instant of impact, so pre-burn impact retains time-consistent thrust and acceleration telemetry. Rendering infers no transitions and performs no force calculations.
 
-Trajectory data should also be stored separately for later plotting and analysis.
+## Extension limits
 
----
-
-## Design Rules
-
-### Rule 1: SI units internally
-
-Never mix screen pixels with metres.
-
-### Rule 2: Renderer does not own physics
-
-Changing zoom or window size must not change simulation results.
-
-### Rule 3: Fixed physics timestep
-
-Physics should not depend directly on FPS.
-
-### Rule 4: One source of truth for state
-
-Rocket position and velocity should be stored in one location only.
-
-### Rule 5: Keep models replaceable
-
-For example, `ConstantThrustMotor` should later be replaceable by `ThrustCurveMotor` without rewriting the simulation.
-
-### Rule 6: Record experiment parameters
-
-A result is not scientifically useful if the simulator cannot reproduce the run.
-
----
-
-## Suggested First Classes
-
-```text
-Vector2 / pygame.math.Vector2
-Rocket
-Motor
-Environment
-Simulation
-Renderer
-```
-
-Using `pygame.math.Vector2` is acceptable for vector arithmetic in the first version.
-
----
-
-## Future Architecture Possibilities
-
-Later, the simulator may benefit from:
-
-- an `Experiment` class,
-- batch simulation mode,
-- CSV export,
-- plotting with Matplotlib,
-- Monte Carlo runs,
-- sensor simulation,
-- autopilot/controller modules,
-- multiple vehicles,
-- reinforcement learning environments,
-- and a headless mode without Pygame.
-
-These should remain future extensions rather than requirements for the first implementation.
+Prompt 02 deliberately does not introduce motor interfaces, atmosphere interfaces, data loaders, experiment frameworks, plugins, databases, ECS, networking, or abstractions for unimplemented milestones. Later effects should be added one validated physical model at a time without changing the current ownership boundary silently.

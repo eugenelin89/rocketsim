@@ -1,89 +1,64 @@
-# Validation and Testing Plan
+# Validation and Testing
 
-## Purpose
+## Current evidence standard
 
-A physics simulator is only useful if its output can be trusted. This document defines how the simulation should be checked as features are added.
+RocketSim validates simple cases against independently calculated known answers before relying on integrated flight behavior. Expected analytical values in tests are computed directly from literal parameters and closed-form equations, not by calling production force, phase, or integration helpers.
 
-The guiding principle is:
+The suite runs headlessly with:
 
-> Validate simple cases against known answers before trusting complex cases.
-
----
-
-## 1. Unit Tests
-
-Create automated tests for small physics functions.
-
-Examples:
-
-### Gravity
-
-For a 2 kg rocket:
-
-```text
-F_g = 2 × 9.81 = 19.62 N downward
+```bash
+conda run -n rocketsim python -m pytest
 ```
 
-### Thrust Components
+## Implemented checks
 
-At 90° launch angle:
+### Configuration and force algebra
+
+- finite input enforcement
+- positive mass and timestep
+- non-negative thrust, burn duration, and gravity
+- valid zero-valued limiting cases
+- gravitational sign and magnitude
+- thrust components at 0, 90, and 180 degrees
+- net acceleration from force divided by mass
+- thrust immediately before, exactly at, and immediately after burnout
+- negative time producing no thrust
+- constant mass throughout a complete run
+
+Direct identities use approximately `1e-12` absolute tolerance where floating-point trigonometry is involved.
+
+### Integration and event boundaries
+
+- one-step ordering that distinguishes semi-implicit from explicit Euler
+- a deliberately non-grid-aligned fixed step that crosses burnout
+- exact powered impulse and coast remainder in the crossing step
+- coast phase and instantaneous coast acceleration at the resulting boundary
+- no false landing at launch
+- deterministic interpolated ground crossing and terminal immutability
+- deterministic no-liftoff behavior for an unsupported ground configuration
+- no negative-altitude history for a downward or under-resolved ground start
+- consistent thrust and acceleration telemetry for an impact before burnout
+
+### Independent analytical motion
+
+The continuous references are:
 
 ```text
-F_thrust_x ≈ 0
-F_thrust_y ≈ T
+v(t) = v0 + a t
+p(t) = p0 + v0 t + 0.5 a t²
 ```
 
-At 0° launch angle:
+They are applied independently to gravity-only, powered constant-acceleration, and piecewise powered/coast cases. Velocity is expected to agree to roundoff during constant-acceleration intervals. Position expectations include the known semi-implicit Euler error:
 
 ```text
-F_thrust_x ≈ T
-F_thrust_y ≈ 0
+p_numerical - p_analytical = 0.5 a t dt
 ```
 
-### Drag
+The suite also checks vertical horizontal displacement, zero thrust, zero gravity, and uniform zero-force motion.
 
-Verify that drag:
+### Convergence
 
-- is zero at zero speed,
-- points opposite velocity,
-- increases by approximately 4× when speed doubles.
-
----
-
-## 2. Analytical Projectile Test
-
-Disable thrust after assigning an initial velocity and disable drag.
-
-For constant gravity:
-
-```text
-x(t) = x0 + vx0 t
-
-y(t) = y0 + vy0 t - 0.5 g t²
-```
-
-Compare simulation position against this analytical result.
-
-This is one of the most important early tests.
-
----
-
-## 3. Vertical Launch Test
-
-Launch at exactly 90° with no drag.
-
-Expected behavior:
-
-- Horizontal displacement should remain approximately zero.
-- Vertical velocity should increase during sufficient powered thrust.
-- After burnout, vertical velocity should decrease linearly under gravity.
-- At apogee, vertical velocity should pass through zero.
-
----
-
-## 4. Timestep Convergence Test
-
-Run the same simulation using:
+An analytically referenced powered case runs with:
 
 ```text
 dt = 0.02 s
@@ -91,129 +66,46 @@ dt = 0.01 s
 dt = 0.005 s
 ```
 
-Compare:
+Position error must decrease monotonically and the error ratio must remain close to two, which is evidence of first-order convergence. A finer run from the same production integrator is not used as the sole correctness oracle.
 
-- apogee,
-- flight time,
-- maximum speed,
-- landing position.
+The default vertical flight also compares interpolated landing time at those three timesteps with the independently solved positive root of the piecewise powered/coast trajectory. Landing-time error must decrease and approximately halve with timestep.
 
-Results should converge as timestep decreases.
+### Lifecycle and time separation
 
-If halving `dt` dramatically changes the result, the timestep is too large or the numerical method is inadequate.
+- full flight leaves the ground and later terminates while descending
+- reset restores state, history, flags, counter, and fractional accumulator
+- replaying the same elapsed-time sequence after reset gives exactly the same history
+- paused wall time does not accumulate
+- pre-launch wall time does not accumulate and pause can resume with retained fractional time
+- zero elapsed time at a very small valid timestep cannot fabricate a physics step
+- a representably subthreshold elapsed interval cannot fabricate a physics step
+- equal `0.5 s` elapsed durations partitioned at 30, 60, and 144 FPS produce the same 50 fixed physics steps and identical trajectory
 
----
+FPS validation feeds frame durations through the public accumulator rather than bypassing it with direct physics calls.
 
-## 5. FPS Independence Test
+### Rendering and application
 
-Run rendering at different frame rates while keeping physics timestep fixed.
+- physics modules have no Pygame import
+- world-to-screen conversion reverses only the vertical axis
+- drawing does not mutate physics state or trajectory
+- keyboard controls exercise launch/pause, reset, and exit
+- a dummy SDL display runs the application for a bounded number of frames and exits normally
 
-For example:
+## Full validation procedure
 
-```text
-30 FPS
-60 FPS
-144 FPS
+Before a completed implementation is committed and pushed:
+
+```bash
+conda run -n rocketsim python --version
+conda run -n rocketsim python -c "import sys; print(sys.executable)"
+conda run -n rocketsim python -m pip --version
+conda run -n rocketsim python -m compileall -q src tests
+conda run -n rocketsim python -m pytest
+conda run -n rocketsim python -c "import rocket_sim"
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy conda run -n rocketsim python -c "from rocket_sim.app import run; raise SystemExit(run(max_frames=2))"
+git diff --check
 ```
 
-Final trajectory results should remain nearly identical.
+## Interpretation limits
 
----
-
-## 6. Energy Sanity Check
-
-For a drag-free coast phase, mechanical energy should remain approximately constant:
-
-```text
-E = 0.5 m v² + m g h
-```
-
-Small numerical error is expected.
-
-Large systematic gain or loss indicates an integration problem.
-
----
-
-## 7. Drag Sanity Checks
-
-With drag enabled:
-
-- Maximum altitude should normally decrease.
-- Mechanical energy should decrease during unpowered flight.
-- Higher drag coefficient should reduce apogee and speed.
-- Larger frontal area should increase drag.
-
----
-
-## 8. Motor Validation
-
-For thrust-curve motors, compute total impulse:
-
-```text
-I = integral(T dt)
-```
-
-Numerically integrate the loaded thrust curve and compare against published or expected motor impulse.
-
----
-
-## 9. Regression Tests
-
-When a milestone is completed, save several reference scenarios.
-
-Example:
-
-```text
-Scenario: basic_vertical_v1
-Mass: 1.0 kg
-Thrust: 20 N
-Burn: 1.0 s
-Angle: 90 deg
-Drag: disabled
-```
-
-Record expected approximate:
-
-```text
-apogee
-flight time
-max velocity
-```
-
-Future code changes should not unexpectedly change these values.
-
----
-
-## 10. Real-World Validation
-
-Only after the mathematical model is internally validated should it be compared with real rocket flight data.
-
-Potential measurements:
-
-- launch mass,
-- motor type,
-- measured altitude,
-- accelerometer data,
-- barometric altitude,
-- GPS trajectory,
-- video-derived ascent time.
-
-Real-world discrepancies can then be used to improve assumptions such as drag coefficient or atmospheric conditions.
-
----
-
-## Validation Log Template
-
-For each test:
-
-```text
-Test name:
-Date:
-Simulator version/commit:
-Parameters:
-Expected result:
-Observed result:
-Difference:
-Pass/fail:
-Notes:
-```
+Landing interpolation follows the discrete numerical segment; it is not an exact impact root. Event time, apogee, and landing metrics remain timestep-sensitive. The suite establishes correctness for the documented simplified equations and numerical contract, not agreement with real rockets. Real-flight comparison requires later calibration, uncertainty analysis, and measured data kept separate from evaluation data.

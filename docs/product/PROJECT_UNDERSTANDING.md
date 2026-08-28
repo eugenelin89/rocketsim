@@ -2,55 +2,51 @@
 
 ## Purpose and current milestone
 
-This repository is the foundation for a scientifically inspectable 2D model-rocket flight simulator. Pygame will provide interaction and visualization, while explicit, testable equations will define the simulation.
+RocketSim is a trustworthy, understandable 2D model-rocket simulator rather than an engineering-grade launch predictor. Prompt 02 completes the first powered point-mass flight milestone: a visible Pygame application backed by a headless, deterministic physics core and independent numerical evidence.
 
-Prompt 01 establishes the Milestone 0 repository and Python tooling baseline only. The package is importable, but no application loop, renderer, simulation state, or flight physics exists yet.
+Prompt 03 has not begun.
 
-## Implemented repository layout
+## Implemented model
+
+The rocket is a constant-mass point in a 2D flat world. Internally, all quantities use SI units, +x points right, +y points upward, and the ground is `y = 0`.
+
+The only forces are:
+
+- constant gravity `(0, -m g)`; and
+- constant thrust `T(cos(theta), sin(theta))` during `0 <= t < burn_time`.
+
+The default configuration is `m = 1 kg`, `T = 20 N`, `burn_time = 1 s`, `theta = 90 degrees`, `g = 9.81 m/s²`, and `dt = 0.01 s`. It is intentionally capable of liftoff. A ground start is accepted only when its initial vertical velocity is non-negative and its first constant-force numerical segment ends above ground. Otherwise it terminates at the initial ground state without recording negative altitude; no pad normal-force model is claimed.
+
+## Implemented structure
 
 ```text
-rocketsim/
-├── docs/
-│   ├── decisions/       durable project decisions
-│   ├── product/         implementation-oriented project status
-│   └── prompts/         implementation prompts and commit records
-├── src/rocket_sim/      importable Python package
-├── tests/               pytest baseline tests
-├── pyproject.toml       project metadata and dependencies
-└── README.md            developer entry point
+src/rocket_sim/config.py       validated immutable configuration and neutral Vector2
+src/rocket_sim/physics.py      force equations and semi-implicit Euler segment update
+src/rocket_sim/simulation.py   state, lifecycle, fixed-step clock, events, and history
+src/rocket_sim/rendering.py    world-to-screen transform, drawing, and telemetry
+src/rocket_sim/app.py          Pygame loop and controls
+src/rocket_sim/__main__.py     python -m rocket_sim entry point
 ```
 
-The repository intentionally has no speculative physics, rendering, motor, environment, or experiment modules. Those boundaries will emerge from concrete implementation work.
+The physics modules do not import Pygame. Rendering reads immutable state samples and cannot change simulation results.
 
-## Python and dependency baseline
+## Numerical and event semantics
 
-- Development requires an isolated Python 3.12 environment with its own pip.
-- The primary development machine uses the Miniconda environment named `rocketsim`, created with both `python=3.12` and `pip`.
-- The Conda environment is the single environment layer; it does not contain a nested `venv`.
-- Other developers may use an equivalent isolated Python 3.12 environment, including standard-library `venv`.
-- `pyproject.toml` is the only project and dependency declaration.
-- Pygame is the sole runtime dependency.
-- pytest is the sole development dependency.
-- Installation uses `python -m pip` so pip provenance matches the selected interpreter.
-- The project uses a `src/` package layout and editable development installation.
+- Each constant-force segment uses semi-implicit Euler: velocity is updated before position.
+- The display loop supplies elapsed wall time to a compensated accumulator; only complete fixed `physics_dt_s` steps advance the model, with no epsilon-created time.
+- Paused or pre-launch wall time is not accumulated, and reset clears accumulator residue.
+- A step spanning burnout is divided at the exact half-open burn boundary, preventing excess or missing thrust impulse.
+- Acceleration telemetry is the instantaneous acceleration at the resulting state time; at exact burnout it therefore shows coast acceleration.
+- Ground return is detected only after liftoff. The first descending discrete segment that crosses `y = 0` is linearly interpolated to the ground, then the flight becomes terminal. This is deterministic interpolation of the discrete numerical path, not an exact impact solve. A terminal sample represents the instant of impact, so thrust and instantaneous acceleration still reflect that time even when impact precedes burnout.
 
-## Architecture and scientific constraints
+## Validation status
 
-- The physics core must remain independent of Pygame wherever practical; Pygame owns display and input concerns.
-- Physics uses SI units and world coordinates: +x is right, +y is up, and gravity will act in -y.
-- Screen-coordinate inversion belongs only at the rendering boundary.
-- Physics simulation time must remain separate from wall-clock and display time.
-- The first physics implementation will use a documented fixed timestep independent of rendering FPS.
-- Physical effects will be added incrementally and validated against analytical or trusted reference results.
+The headless test suite covers configuration validation, force signs and components, burn-boundary predicates, constant mass, Euler ordering, analytical gravity/powered/piecewise motion, non-aligned burnout splitting, limiting cases, first-order timestep convergence, reset determinism, interpolated ground return, 30/60/144 FPS partition independence, coordinate conversion, rendering non-mutation, controls, package import, and a bounded dummy-display application smoke test.
 
-## Current validation
+Analytical expected values are calculated independently in tests rather than through production force or integration helpers.
 
-The current pytest test imports `rocket_sim` from the editable installation and verifies its baseline package version. There are no physics tests because no physics is implemented.
+## Current limits
 
-## Current non-goals
+There is no drag, variable mass, real motor curve, atmosphere, wind, recovery, collision dynamics, rotation, stability, guidance, control, experiment export, calibration, or uncertainty model. The point-mass result is not equivalent to 3D flight dynamics and is not an engineering or safety prediction.
 
-This milestone does not implement a Pygame window, application loop, rocket state, forces, integration, rendering, telemetry, or any flight behavior. Drag, variable mass, thrust curves, atmosphere, recovery, rotation, stability, guidance, and optimization remain later work.
-
-## Immediate next task
-
-Prompt 02 should implement 2D constant-mass point-flight dynamics with constant gravity and finite-duration constant thrust, together with the minimum application/rendering boundary required to observe it and analytical validation of the motion equations.
+The next milestone remains out of scope for Prompt 02.

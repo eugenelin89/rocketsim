@@ -1,317 +1,117 @@
 # Physics Model
 
-## Purpose
+## Implemented Milestone 1 model
 
-This document defines the physical assumptions, equations, variables, and staged fidelity of the rocket simulator.
+RocketSim currently models one constant-mass point rocket in a two-dimensional flat world. It uses SI units internally:
 
-The simulator should use SI units internally:
+- position: metres (m)
+- time: seconds (s)
+- velocity: metres per second (m/s)
+- acceleration: metres per second squared (m/s²)
+- mass: kilograms (kg)
+- force: newtons (N)
+- angle: radians
 
-- Position: metres (m)
-- Time: seconds (s)
-- Velocity: metres per second (m/s)
-- Acceleration: metres per second squared (m/s²)
-- Mass: kilograms (kg)
-- Force: newtons (N)
-- Angle: radians internally
+World +x is horizontal/right, world +y is upward, and the ground is `y = 0`. Screen-coordinate inversion exists only in the renderer.
 
-Screen pixels should never be used as physics units.
+## State and configuration
 
----
+Each recorded state contains simulation time, position, velocity, instantaneous acceleration, constant mass, flight phase, and whether liftoff has occurred. Configuration contains mass, thrust magnitude, burn duration, fixed world launch angle, gravity magnitude, fixed physics timestep, and initial position and velocity.
 
-## Coordinate System
+All scalar and vector inputs must be finite. Mass and timestep must be positive. Thrust, burn duration, and gravity magnitude may be zero but not negative. Initial altitude may not be below ground.
 
-Use a two-dimensional Cartesian coordinate system:
+## Forces and acceleration
 
-- +x = horizontal right
-- +y = upward
-- Ground = y = 0
-
-Pygame screen coordinates increase downward, so the renderer must convert simulation coordinates to screen coordinates.
-
----
-
-## Core State Variables
-
-At minimum, the rocket state should contain:
-
-```text
-time
-position_x
-position_y
-velocity_x
-velocity_y
-mass
-```
-
-Later versions may add:
-
-```text
-angle
-angular_velocity
-propellant_mass
-acceleration_x
-acceleration_y
-mach_number
-```
-
----
-
-## Milestone 1 Physics
-
-### Gravity
-
-Assume constant gravitational acceleration:
-
-```text
-g = 9.81 m/s²
-```
-
-The gravitational force is:
-
-```text
-F_gravity = m g
-```
-
-acting downward.
-
-In vector form:
+For constant mass `m > 0`, gravity magnitude `g >= 0`, thrust magnitude `T >= 0`, fixed launch angle `theta`, and burn duration `t_b >= 0`:
 
 ```text
 F_g = (0, -m g)
 ```
 
-### Thrust
-
-For the first implementation, assume constant thrust during the motor burn.
-
-For thrust magnitude `T` and launch angle `theta`:
+Thrust uses an exact half-open time interval:
 
 ```text
-F_thrust_x = T cos(theta)
-F_thrust_y = T sin(theta)
+F_T(t) = T(cos(theta), sin(theta))  when 0 <= t < t_b
+F_T(t) = (0, 0)                    otherwise
 ```
 
-After burnout:
+Negative time never produces thrust. Net acceleration is:
 
 ```text
-T = 0
+a(t) = (F_T(t) + F_g) / m
 ```
 
-### Net Force
+Therefore the powered and coast accelerations are:
 
 ```text
-F_net = F_thrust + F_gravity
+a_power = (T cos(theta) / m, T sin(theta) / m - g)
+a_coast = (0, -g)
 ```
 
-### Acceleration
+Mass does not change at ignition, burnout, coast, or landing.
 
-Newton's second law:
+## Numerical integration
+
+The default fixed physics timestep is `dt = 0.01 s`. Every interval over which acceleration is constant uses semi-implicit Euler in this exact order:
 
 ```text
-a = F_net / m
+v_next = v_current + a_current dt
+p_next = p_current + v_next dt
 ```
 
-Therefore:
+If a configured step begins before burnout and ends after it, the simulator performs a powered substep ending exactly at `t_b`, followed by a coast substep for the remaining duration. A step ending exactly at burnout is powered for its entire interval; the resulting state at `t_b` reports coast phase and coast acceleration. A step starting at burnout is entirely coast.
+
+For constant acceleration over `t = N dt`, velocity is exact apart from floating-point roundoff. Semi-implicit position differs from the continuous solution by:
 
 ```text
-a_x = F_net_x / m
-a_y = F_net_y / m
+p_numerical - p_analytical = 0.5 a t dt
 ```
 
----
+Position is therefore first-order accurate: its error should approximately halve when `dt` halves.
 
-## Numerical Integration
+## Continuous analytical references
 
-Use a fixed simulation timestep `dt` initially.
-
-Recommended starting value:
+For a constant acceleration `a` over duration `t`:
 
 ```text
-dt = 0.01 s
+v(t) = v0 + a t
+p(t) = p0 + v0 t + 0.5 a t²
 ```
 
-Use semi-implicit Euler integration:
+For a powered/coast case, evaluate those equations with `a_power` through `t_b` to obtain `p_b` and `v_b`, then with `a_coast` for `tau = t - t_b`:
 
 ```text
-v_new = v_old + a * dt
-x_new = x_old + v_new * dt
+v(t) = v_b + a_coast tau
+p(t) = p_b + v_b tau + 0.5 a_coast tau²
 ```
 
-This is preferable to updating position using the old velocity because it is generally more stable for simple real-time simulations.
+These continuous equations are the independent test oracle, with tolerances derived from the known Euler position error.
 
-The physics timestep should be independent from the graphical frame rate if possible.
+## Ground boundary
 
----
+Landing cannot trigger merely because the initial position is on the ground. The state first has to attain positive altitude. On the first later descending numerical segment whose endpoints cross from `y > 0` to `y <= 0`, the simulator linearly interpolates time, horizontal position, and velocity between the discrete endpoints, sets altitude to exactly zero, and enters a terminal landed phase. Any remainder of that physics step is discarded.
 
-## Milestone 2: Aerodynamic Drag
+This is deterministic event interpolation, not an exact root solve. Landing time, range, and impact velocity remain timestep-sensitive and must not be reported as exact.
 
-Drag magnitude:
+A configuration starting on the ground is accepted only when its initial vertical velocity is non-negative and the endpoint of its first constant-force numerical segment is above ground. A downward initial velocity or a short flight that is too under-resolved to produce a positive first endpoint terminates at the initial ground state without recording negative altitude. Holding or resolving such a rocket on a pad would require an unimplemented contact/normal-force model. Gravity-only and zero-thrust analytical cases therefore start above ground or use a timestep that resolves their upward motion.
+
+The terminal state represents the instant of impact. If impact occurs before burnout, its instantaneous acceleration and reported thrust still follow the half-open burn model at that impact time; no later motion is integrated.
+
+## Implemented default scenario
 
 ```text
-F_drag = 0.5 * rho * C_d * A * v²
+mass              1.0 kg
+thrust            20.0 N
+burn duration     1.0 s
+launch angle      pi/2 rad (vertical)
+gravity           9.81 m/s²
+physics timestep  0.01 s
 ```
 
-where:
+The continuous powered acceleration is `10.19 m/s²` upward, so this scenario leaves the ground.
 
-- `rho` = air density
-- `C_d` = drag coefficient
-- `A` = reference/frontal area
-- `v` = speed
+## Explicit omissions
 
-Drag must point opposite the velocity vector.
+The model has no aerodynamic drag, wind, atmospheric variation, propellant depletion, variable mass, sampled thrust curve, attitude change, rotation, recovery device, bounce, structural dynamics, Earth curvature, or Coriolis effect. No empirical game-feel constants or clamps are applied.
 
-For speed:
-
-```text
-v = sqrt(v_x² + v_y²)
-```
-
-If `v > 0`:
-
-```text
-F_drag_x = -F_drag * v_x / v
-F_drag_y = -F_drag * v_y / v
-```
-
-Initial simplification:
-
-```text
-rho = 1.225 kg/m³
-```
-
-at sea level.
-
----
-
-## Milestone 3: Variable Mass
-
-Model propellant consumption during motor burn.
-
-A simple first model:
-
-```text
-mass(t) = dry_mass + remaining_propellant_mass
-```
-
-For constant mass flow:
-
-```text
-propellant_mass_remaining = initial_propellant_mass - mass_flow_rate * t
-```
-
-Clamp remaining propellant mass to zero.
-
-The reduced mass should automatically increase acceleration for the same thrust.
-
----
-
-## Milestone 4: Real Motor Thrust Curve
-
-Replace constant thrust with a time-dependent motor curve.
-
-Example data:
-
-```text
-time_s,thrust_N
-0.00,0
-0.05,25
-0.10,40
-0.30,35
-0.60,20
-0.80,0
-```
-
-Interpolate between samples to obtain thrust at simulation time.
-
-Possible future source: published model rocket motor test data.
-
----
-
-## Milestone 5: Atmospheric Model
-
-Allow air density to decrease with altitude.
-
-A simple approximation can be introduced first. A more realistic standard-atmosphere model can be added later.
-
-Potential variables:
-
-```text
-temperature
-pressure
-air_density
-speed_of_sound
-```
-
-Mach number:
-
-```text
-Mach = speed / speed_of_sound
-```
-
----
-
-## Milestone 6: Attitude and Stability
-
-Once translational motion is reliable, introduce rocket orientation.
-
-State variables:
-
-```text
-angle theta
-angular_velocity omega
-angular_acceleration alpha
-```
-
-Rotational dynamics:
-
-```text
-torque = I * alpha
-```
-
-or:
-
-```text
-alpha = torque / I
-```
-
-Eventually, aerodynamic force should depend on angle of attack, center of pressure, and center of mass.
-
-This milestone is a major increase in complexity and should not be started until earlier models are validated.
-
----
-
-## Ground Interaction
-
-The simulation begins with:
-
-```text
-y = 0
-```
-
-After launch, if the rocket returns to:
-
-```text
-y <= 0
-```
-
-and is descending, the flight should end.
-
-For the first version, no bounce or impact dynamics are needed.
-
----
-
-## Important Assumptions to Track
-
-Every simulation run should make clear which assumptions are active.
-
-Examples:
-
-- Flat Earth over short range.
-- Constant `g`.
-- No Coriolis force.
-- No wind unless enabled.
-- Rocket treated as a point mass until attitude dynamics are added.
-- Constant drag coefficient unless otherwise specified.
-- No transonic aerodynamic correction unless explicitly implemented.
-
-These assumptions should eventually appear in exported experiment metadata.
+These omissions bound the meaning of results. The 2D point-mass trajectory is a validated learning model, not a calibrated real-flight or engineering-grade prediction.
