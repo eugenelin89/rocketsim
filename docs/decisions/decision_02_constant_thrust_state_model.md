@@ -35,3 +35,7 @@ The accepted model keeps every force physically named, preserves explicit units 
 - The result is not a 3D, aerodynamic, calibrated, or engineering-grade prediction.
 
 No prior decision is superseded.
+
+## Later partial supersession
+
+Decision 07 supersedes this record's independently configured constant-thrust/burn-duration propulsion representation and its `20 N` / `1 s` default. The constant-mass state representation, fixed world thrust direction, half-open motor interval, ground-boundary policy, and instantaneous resulting-state telemetry remain accepted. The two-sample rectangular `ThrustCurve` preserves the former constant-thrust model as a limiting case.

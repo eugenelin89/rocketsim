@@ -2,7 +2,14 @@ import math
 
 import pytest
 
-from rocket_sim import FlightPhase, Simulation, SimulationConfig, Vector2
+from rocket_sim import (
+    FlightPhase,
+    Simulation,
+    SimulationConfig,
+    ThrustCurve,
+    ThrustSample,
+    Vector2,
+)
 
 
 def test_default_flight_lifts_off_and_returns_to_ground_once() -> None:
@@ -31,8 +38,7 @@ def test_default_flight_lifts_off_and_returns_to_ground_once() -> None:
 def test_ground_crossing_is_linearly_interpolated_on_discrete_segment() -> None:
     simulation = Simulation(
         SimulationConfig(
-            thrust_n=0.0,
-            burn_time_s=0.0,
+            thrust_curve=ThrustCurve.zero(),
             gravity_m_s2=0.0,
             air_density_kg_m3=0.0,
             physics_dt_s=0.2,
@@ -53,8 +59,7 @@ def test_ground_crossing_is_linearly_interpolated_on_discrete_segment() -> None:
 def test_accelerated_ground_crossing_interpolates_impact_velocity() -> None:
     simulation = Simulation(
         SimulationConfig(
-            thrust_n=0.0,
-            burn_time_s=0.0,
+            thrust_curve=ThrustCurve.zero(),
             gravity_m_s2=2.0,
             air_density_kg_m3=0.0,
             physics_dt_s=0.2,
@@ -75,7 +80,7 @@ def test_accelerated_ground_crossing_interpolates_impact_velocity() -> None:
 
 def test_ground_configuration_that_cannot_lift_off_terminates_without_motion() -> None:
     simulation = Simulation(
-        SimulationConfig(thrust_n=0.0, burn_time_s=0.0, gravity_m_s2=9.81)
+        SimulationConfig(thrust_curve=ThrustCurve.zero(), gravity_m_s2=9.81)
     )
 
     simulation.launch()
@@ -89,8 +94,7 @@ def test_ground_configuration_that_cannot_lift_off_terminates_without_motion() -
 def test_under_resolved_ground_launch_never_records_negative_altitude() -> None:
     simulation = Simulation(
         SimulationConfig(
-            thrust_n=0.0,
-            burn_time_s=0.0,
+            thrust_curve=ThrustCurve.zero(),
             gravity_m_s2=9.81,
             physics_dt_s=0.1,
             initial_velocity_m_s=Vector2(0.0, 0.1),
@@ -120,8 +124,7 @@ def test_pre_burn_impact_telemetry_keeps_thrust_and_acceleration_consistent() ->
     simulation = Simulation(
         SimulationConfig(
             mass_kg=1.0,
-            thrust_n=1.0,
-            burn_time_s=1.0,
+            thrust_curve=ThrustCurve.constant(1.0, 1.0),
             launch_angle_rad=0.0,
             gravity_m_s2=0.0,
             air_density_kg_m3=0.0,
@@ -140,12 +143,46 @@ def test_pre_burn_impact_telemetry_keeps_thrust_and_acceleration_consistent() ->
     assert simulation.state.acceleration_m_s2 == Vector2(1.0, 0.0)
 
 
+def test_time_varying_thrust_impact_preserves_interpolated_event_contract() -> None:
+    curve = ThrustCurve(
+        (ThrustSample(0.0, 2.0), ThrustSample(1.0, 10.0))
+    )
+    simulation = Simulation(
+        SimulationConfig(
+            mass_kg=1.0,
+            thrust_curve=curve,
+            launch_angle_rad=0.0,
+            gravity_m_s2=0.0,
+            air_density_kg_m3=0.0,
+            physics_dt_s=0.2,
+            initial_position_m=Vector2(0.0, 0.1),
+            initial_velocity_m_s=Vector2(0.0, -1.0),
+        )
+    )
+    simulation.launch()
+
+    assert simulation.step()
+
+    assert simulation.is_finished
+    assert simulation.state.time_s == pytest.approx(0.1)
+    assert simulation.state.position_m.x == pytest.approx(0.056)
+    assert simulation.state.position_m.y == 0.0
+    assert simulation.state.velocity_m_s.x == pytest.approx(0.28)
+    assert simulation.state.velocity_m_s.y == -1.0
+    assert simulation.current_thrust_n == pytest.approx(2.8)
+    assert simulation.delivered_impulse_ns == pytest.approx(0.24)
+    assert simulation.state.acceleration_m_s2.x == pytest.approx(2.8)
+    assert simulation.state.acceleration_m_s2.y == 0.0
+    assert simulation.state.velocity_m_s.x != pytest.approx(
+        simulation.delivered_impulse_ns
+    )
+
+
 def test_drag_telemetry_uses_interpolated_impact_velocity() -> None:
     simulation = Simulation(
         SimulationConfig(
             mass_kg=1.0,
-            thrust_n=1.0,
-            burn_time_s=1.0,
+            thrust_curve=ThrustCurve.constant(1.0, 1.0),
             launch_angle_rad=0.0,
             gravity_m_s2=0.0,
             air_density_kg_m3=2.0,
@@ -195,6 +232,9 @@ def test_reset_reproduces_state_history_and_clears_fractional_accumulator() -> N
     first_state = simulation.state
     first_history = simulation.trajectory
     first_steps = simulation.physics_step_count
+    first_forces = simulation.current_forces
+    first_delivered_impulse = simulation.delivered_impulse_ns
+    first_config = simulation.config
     assert simulation.accumulator_s > 0.0
 
     simulation.reset()
@@ -208,6 +248,9 @@ def test_reset_reproduces_state_history_and_clears_fractional_accumulator() -> N
     assert simulation.state == first_state
     assert simulation.trajectory == first_history
     assert simulation.physics_step_count == first_steps
+    assert simulation.current_forces == first_forces
+    assert simulation.delivered_impulse_ns == first_delivered_impulse
+    assert simulation.config == first_config
 
 
 @pytest.mark.parametrize("elapsed_s", [-0.01, math.nan, math.inf])
@@ -284,7 +327,7 @@ def test_paused_single_step_uses_production_path_and_preserves_accumulator() -> 
 def test_paused_single_step_preserves_burnout_split() -> None:
     simulation = Simulation(
         SimulationConfig(
-            burn_time_s=0.015,
+            thrust_curve=ThrustCurve.constant(20.0, 0.015),
             physics_dt_s=0.01,
             air_density_kg_m3=1.225,
         )
@@ -302,6 +345,32 @@ def test_paused_single_step_preserves_burnout_split() -> None:
     assert simulation.state.phase is FlightPhase.COAST
 
 
+def test_paused_single_step_crosses_sample_knot_and_updates_motor_observables() -> None:
+    paused = Simulation(SimulationConfig(physics_dt_s=0.04))
+    running = Simulation(SimulationConfig(physics_dt_s=0.04))
+    for simulation in (paused, running):
+        simulation.launch()
+        assert simulation.step()
+
+    paused.advance_elapsed(0.005)
+    paused.toggle_pause()
+    before_impulse = paused.delivered_impulse_ns
+    before_thrust = paused.current_thrust_n
+    before_accumulator = paused.accumulator_s
+
+    assert paused.single_step_paused()
+    assert running.step()
+
+    assert paused.is_paused
+    assert paused.state == running.state
+    assert paused.trajectory == running.trajectory
+    assert paused.accumulator_s == before_accumulator
+    assert [state.time_s for state in paused.trajectory].count(0.05) == 1
+    assert paused.delivered_impulse_ns > before_impulse
+    assert paused.current_thrust_n != before_thrust
+    assert paused.current_forces == running.current_forces
+
+
 def test_paused_single_step_is_inactive_when_not_paused_live_flight() -> None:
     ready = Simulation()
     assert not ready.single_step_paused()
@@ -310,7 +379,7 @@ def test_paused_single_step_is_inactive_when_not_paused_live_flight() -> None:
     assert not ready.single_step_paused()
 
     landed = Simulation(
-        SimulationConfig(thrust_n=0.0, burn_time_s=0.0)
+        SimulationConfig(thrust_curve=ThrustCurve.zero())
     )
     landed.launch()
     assert landed.is_finished

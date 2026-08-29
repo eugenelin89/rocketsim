@@ -9,6 +9,7 @@ import pygame
 
 from .config import Vector2
 from .physics import ForceBreakdown
+from .propulsion import ThrustCurve
 from .simulation import FlightPhase, Simulation
 
 
@@ -23,6 +24,61 @@ CONTROL_ROWS = (
     "SPACE launch/pause  RIGHT single-step  R reset  ESC exit",
     "F force vectors  I Physics Inspector",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ThrustTimelineGeometry:
+    """Rendering-only coordinates derived from one production thrust curve."""
+
+    sample_points_px: tuple[tuple[int, int], ...]
+    cursor_x_px: int
+    burnout_x_px: int
+    current_thrust_n: float
+    cursor_time_s: float
+    burnout_zero_point_px: tuple[int, int]
+    terminal_sample_is_left_limit: bool
+
+
+def thrust_timeline_geometry(
+    thrust_curve: ThrustCurve,
+    current_time_s: float,
+    current_thrust_n: float,
+    graph_rect: pygame.Rect,
+) -> ThrustTimelineGeometry:
+    """Map production samples and current motor time into a graph rectangle."""
+
+    burn_duration_s = thrust_curve.burn_duration_s
+    peak_thrust_n = thrust_curve.peak_thrust_n
+    cursor_time_s = min(max(current_time_s, 0.0), burn_duration_s)
+
+    def time_x(time_s: float) -> int:
+        if burn_duration_s == 0.0:
+            return graph_rect.left
+        return round(
+            graph_rect.left + graph_rect.width * time_s / burn_duration_s
+        )
+
+    def thrust_y(thrust_n: float) -> int:
+        if peak_thrust_n == 0.0:
+            return graph_rect.bottom
+        return round(
+            graph_rect.bottom - graph_rect.height * thrust_n / peak_thrust_n
+        )
+
+    return ThrustTimelineGeometry(
+        sample_points_px=tuple(
+            (time_x(sample.time_s), thrust_y(sample.thrust_n))
+            for sample in thrust_curve.samples
+        ),
+        cursor_x_px=time_x(cursor_time_s),
+        burnout_x_px=time_x(burn_duration_s),
+        current_thrust_n=current_thrust_n,
+        cursor_time_s=cursor_time_s,
+        burnout_zero_point_px=(time_x(burn_duration_s), thrust_y(0.0)),
+        terminal_sample_is_left_limit=(
+            burn_duration_s > 0.0 and thrust_curve.samples[-1].thrust_n > 0.0
+        ),
+    )
 
 
 def world_to_screen(
@@ -70,12 +126,41 @@ def physics_inspector_rows(
     else:
         phase = state.phase.value.upper()
 
-    if state.phase is FlightPhase.READY:
-        burnout = f"pending at {simulation.config.burn_time_s:.3f} s"
-    elif state.time_s >= simulation.config.burn_time_s:
-        burnout = f"complete at {simulation.config.burn_time_s:.3f} s"
+    thrust_curve = simulation.config.thrust_curve
+    if thrust_curve.burn_duration_s == 0.0:
+        burnout = "zero-duration curve (no burn)"
+        motor_phase = (
+            "READY / NO BURN"
+            if state.phase is FlightPhase.READY
+            else "COMPLETE / NO BURN"
+        )
+    elif state.phase is FlightPhase.READY:
+        burnout = (
+            f"pending at {thrust_curve.burn_duration_s:.3f} s"
+        )
+        motor_phase = "READY"
+    elif state.time_s >= thrust_curve.burn_duration_s:
+        burnout = (
+            f"complete at {thrust_curve.burn_duration_s:.3f} s"
+        )
+        motor_phase = "COMPLETE"
     else:
-        burnout = f"pending at {simulation.config.burn_time_s:.3f} s"
+        burnout = (
+            f"pending at {thrust_curve.burn_duration_s:.3f} s"
+        )
+        motor_phase = (
+            "ACTIVE (flight terminal)"
+            if state.phase is FlightPhase.LANDED
+            else "ACTIVE"
+        )
+
+    if thrust_curve.burn_duration_s == 0.0:
+        burn_progress = "N/A (zero-duration)"
+    else:
+        fraction = min(
+            max(state.time_s / thrust_curve.burn_duration_s, 0.0), 1.0
+        )
+        burn_progress = f"{100.0 * fraction:6.2f}%"
 
     def force_row(name: str, force: Vector2) -> str:
         return (
@@ -99,6 +184,16 @@ def physics_inspector_rows(
         ),
         f"Mass: {state.mass_kg:7.3f} kg",
         "",
+        "MOTOR",
+        f"Motor phase: {motor_phase}",
+        f"Current thrust: {forces.thrust_n.magnitude:7.3f} N",
+        f"Burn-time progress: {burn_progress}",
+        f"Burn duration: {thrust_curve.burn_duration_s:7.3f} s",
+        f"Peak stored thrust: {thrust_curve.peak_thrust_n:7.3f} N",
+        f"Average thrust: {thrust_curve.average_thrust_n:7.3f} N",
+        f"Delivered impulse: {simulation.delivered_impulse_ns:7.3f} N*s",
+        f"Total impulse: {thrust_curve.total_impulse_ns:7.3f} N*s",
+        "",
         "FORCES",
         force_row("Thrust", forces.thrust_n),
         force_row("Gravity", forces.gravity_n),
@@ -112,10 +207,11 @@ def physics_inspector_rows(
         "",
         "EQUATIONS",
         "Fg = (0, -m g)",
-        "Ft = T(cos(theta), sin(theta))",
+        "Ft(t) = T(t) (cos(theta), sin(theta))",
         "Fd = -0.5 rho Cd A |v_air| v_air",
         "Fnet = Ft + Fg + Fd",
         "a = Fnet / m",
+        "I = integral T(t) dt",
         "Still air: v_air = v_rocket",
     )
 
@@ -177,6 +273,10 @@ class Renderer:
         )
 
         self._draw_trajectory(surface, simulation)
+        forces = simulation.current_forces
+        self._draw_thrust_timeline(
+            surface, simulation, forces.thrust_n.magnitude
+        )
         rocket_position = world_to_screen(
             simulation.state.position_m,
             self.origin_px,
@@ -184,7 +284,6 @@ class Renderer:
         )
         self._draw_rocket(surface, rocket_position)
 
-        forces = simulation.current_forces
         if self.show_force_vectors:
             self._draw_force_vectors(surface, rocket_position, forces)
 
@@ -315,6 +414,97 @@ class Renderer:
             rendered = self._font.render(text, True, (232, 238, 247))
             surface.blit(rendered, (18, 16 + index * 25))
 
+    def _draw_thrust_timeline(
+        self,
+        surface: pygame.Surface,
+        simulation: Simulation,
+        current_thrust_n: float,
+    ) -> None:
+        panel = pygame.Rect(self.world_width_px - 374, 82, 352, 184)
+        graph = pygame.Rect(panel.left + 42, panel.top + 30, 290, 118)
+        curve = simulation.config.thrust_curve
+        geometry = thrust_timeline_geometry(
+            curve, simulation.state.time_s, current_thrust_n, graph
+        )
+
+        pygame.draw.rect(surface, (18, 31, 53), panel, border_radius=6)
+        pygame.draw.rect(surface, (78, 98, 126), panel, 1, border_radius=6)
+        pygame.draw.line(
+            surface,
+            (145, 159, 181),
+            (graph.left, graph.bottom),
+            (graph.right, graph.bottom),
+            1,
+        )
+        pygame.draw.line(
+            surface,
+            (145, 159, 181),
+            (graph.left, graph.top),
+            (graph.left, graph.bottom),
+            1,
+        )
+
+        pygame.draw.line(
+            surface,
+            (238, 112, 214),
+            (geometry.burnout_x_px, graph.top),
+            (geometry.burnout_x_px, graph.bottom),
+            1,
+        )
+
+        if len(geometry.sample_points_px) > 1:
+            pygame.draw.lines(
+                surface,
+                (255, 174, 66),
+                False,
+                geometry.sample_points_px,
+                2,
+            )
+        filled_points = geometry.sample_points_px
+        if geometry.terminal_sample_is_left_limit:
+            filled_points = geometry.sample_points_px[:-1]
+        for point in filled_points:
+            pygame.draw.circle(surface, (245, 214, 96), point, 3)
+        if geometry.terminal_sample_is_left_limit:
+            terminal_point = geometry.sample_points_px[-1]
+            pygame.draw.circle(surface, (18, 31, 53), terminal_point, 4)
+            pygame.draw.circle(surface, (245, 214, 96), terminal_point, 4, 1)
+            pygame.draw.circle(
+                surface, (245, 214, 96), geometry.burnout_zero_point_px, 3
+            )
+        pygame.draw.line(
+            surface,
+            (102, 221, 154),
+            (geometry.cursor_x_px, graph.top),
+            (geometry.cursor_x_px, graph.bottom),
+            2,
+        )
+
+        heading = self._small_font.render(
+            "MOTOR THRUST TIMELINE", True, (245, 214, 96)
+        )
+        surface.blit(heading, (panel.left + 10, panel.top + 7))
+        labels = (
+            ("T (N)", (panel.left + 5, graph.top - 2)),
+            (
+                f"motor cursor {geometry.cursor_time_s:.3f} s"
+                + (
+                    " (clamped at burnout)"
+                    if simulation.state.time_s > curve.burn_duration_s
+                    else ""
+                ),
+                (panel.left + 10, graph.bottom + 7),
+            ),
+            (
+                f"T={geometry.current_thrust_n:.2f} N  stored peak={curve.peak_thrust_n:.2f} N",
+                (panel.left + 190, panel.top + 7),
+            ),
+            ("t (s)", (graph.right - 26, graph.bottom - 17)),
+        )
+        for label, position in labels:
+            rendered = self._small_font.render(label, True, (213, 222, 236))
+            surface.blit(rendered, position)
+
     def _draw_inspector(
         self,
         surface: pygame.Surface,
@@ -326,8 +516,13 @@ class Renderer:
         for index, text in enumerate(rows):
             if index == 0:
                 rendered = self._heading_font.render(text, True, (245, 214, 96))
-            elif text in {"FORCES", "PARAMETERS (constant)", "EQUATIONS"}:
+            elif text in {
+                "MOTOR",
+                "FORCES",
+                "PARAMETERS (constant)",
+                "EQUATIONS",
+            }:
                 rendered = self._font.render(text, True, (142, 203, 255))
             else:
                 rendered = self._small_font.render(text, True, (232, 238, 247))
-            surface.blit(rendered, (panel_x, 16 + index * 23))
+            surface.blit(rendered, (panel_x, 12 + index * 17))

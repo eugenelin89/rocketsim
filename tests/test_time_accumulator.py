@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rocket_sim import Simulation, SimulationConfig
+from rocket_sim import Simulation, SimulationConfig, ThrustCurve
 
 
 def _run_partitioned(
@@ -16,7 +16,7 @@ def _run_partitioned(
         SimulationConfig(
             air_density_kg_m3=air_density_kg_m3,
             physics_dt_s=physics_dt_s,
-            burn_time_s=burn_time_s,
+            thrust_curve=ThrustCurve.constant(20.0, burn_time_s),
         )
     )
     simulation.launch()
@@ -64,6 +64,44 @@ def test_active_drag_results_are_independent_of_30_60_144_fps_partitions() -> No
         == simulations[1].trajectory
         == simulations[2].trajectory
     )
+
+
+def test_sampled_thrust_and_drag_are_independent_of_30_60_144_fps_partitions() -> None:
+    def run(fps: int) -> Simulation:
+        simulation = Simulation()
+        simulation.launch()
+        total_s = 0.5
+        frame_s = 1.0 / fps
+        elapsed_s = 0.0
+        while elapsed_s + frame_s < total_s:
+            simulation.advance_elapsed(frame_s)
+            elapsed_s += frame_s
+        simulation.advance_elapsed(total_s - elapsed_s)
+        return simulation
+
+    simulations = [run(fps) for fps in (30, 60, 144)]
+
+    for simulation in simulations:
+        assert simulation.physics_step_count == 50
+        assert simulation.state.time_s == pytest.approx(0.5, abs=1e-12)
+    assert simulations[0].state == simulations[1].state == simulations[2].state
+    assert (
+        simulations[0].trajectory
+        == simulations[1].trajectory
+        == simulations[2].trajectory
+    )
+    assert (
+        simulations[0].current_forces
+        == simulations[1].current_forces
+        == simulations[2].current_forces
+    )
+    assert (
+        simulations[0].delivered_impulse_ns
+        == simulations[1].delivered_impulse_ns
+        == simulations[2].delivered_impulse_ns
+    )
+    for simulation in simulations:
+        assert simulation.accumulator_s == pytest.approx(0.0, abs=1e-12)
 
 
 def test_zero_elapsed_never_advances_even_with_very_small_valid_timestep() -> None:

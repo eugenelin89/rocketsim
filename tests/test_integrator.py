@@ -2,7 +2,13 @@ import math
 
 import pytest
 
-from rocket_sim import FlightPhase, Simulation, SimulationConfig, Vector2
+from rocket_sim import (
+    FlightPhase,
+    Simulation,
+    SimulationConfig,
+    ThrustCurve,
+    Vector2,
+)
 from rocket_sim.physics import semi_implicit_euler
 
 
@@ -21,8 +27,7 @@ def test_semi_implicit_euler_uses_updated_velocity_for_position() -> None:
 def test_step_crossing_burnout_is_split_at_exact_boundary() -> None:
     config = SimulationConfig(
         mass_kg=1.0,
-        thrust_n=10.0,
-        burn_time_s=0.75,
+        thrust_curve=ThrustCurve.constant(10.0, 0.75),
         launch_angle_rad=0.0,
         gravity_m_s2=0.0,
         air_density_kg_m3=0.0,
@@ -70,8 +75,7 @@ def test_drag_step_uses_start_velocity_then_updated_velocity_for_position() -> N
     simulation = Simulation(
         SimulationConfig(
             mass_kg=2.0,
-            thrust_n=10.0,
-            burn_time_s=2.0,
+            thrust_curve=ThrustCurve.constant(10.0, 2.0),
             launch_angle_rad=0.0,
             gravity_m_s2=3.0,
             air_density_kg_m3=2.0,
@@ -116,8 +120,7 @@ def test_drag_is_recomputed_for_coast_substep_at_exact_burnout() -> None:
     simulation = Simulation(
         SimulationConfig(
             mass_kg=1.0,
-            thrust_n=4.0,
-            burn_time_s=0.5,
+            thrust_curve=ThrustCurve.constant(4.0, 0.5),
             launch_angle_rad=0.0,
             gravity_m_s2=0.0,
             air_density_kg_m3=1.0,

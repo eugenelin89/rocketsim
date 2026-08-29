@@ -30,15 +30,26 @@ def gravity_force_n(mass_kg: float, gravity_m_s2: float) -> Vector2:
 
 
 def thrust_force_n(config: SimulationConfig, time_s: float) -> Vector2:
-    """Return constant world-angle thrust on the half-open burn interval."""
+    """Return instantaneous sampled thrust at the fixed world angle."""
 
     if not math.isfinite(time_s):
         raise ValueError("time_s must be finite")
-    if not 0.0 <= time_s < config.burn_time_s:
-        return Vector2(0.0, 0.0)
+    thrust_n = config.thrust_curve.thrust_at(time_s)
     return Vector2(
-        config.thrust_n * math.cos(config.launch_angle_rad),
-        config.thrust_n * math.sin(config.launch_angle_rad),
+        thrust_n * math.cos(config.launch_angle_rad),
+        thrust_n * math.sin(config.launch_angle_rad),
+    )
+
+
+def thrust_impulse_n_s(
+    config: SimulationConfig, start_time_s: float, end_time_s: float
+) -> Vector2:
+    """Return exact motor impulse over an interval at the fixed direction."""
+
+    impulse_ns = config.thrust_curve.impulse_between_ns(start_time_s, end_time_s)
+    return Vector2(
+        impulse_ns * math.cos(config.launch_angle_rad),
+        impulse_ns * math.sin(config.launch_angle_rad),
     )
 
 
@@ -106,5 +117,25 @@ def semi_implicit_euler(
     if not math.isfinite(duration_s) or duration_s <= 0.0:
         raise ValueError("duration_s must be finite and greater than zero")
     new_velocity = velocity_m_s + acceleration * duration_s
+    new_position = position_m + new_velocity * duration_s
+    return new_position, new_velocity
+
+
+def semi_implicit_impulse_step(
+    position_m: Vector2,
+    velocity_m_s: Vector2,
+    thrust_impulse_ns: Vector2,
+    other_force_n: Vector2,
+    mass_kg: float,
+    duration_s: float,
+) -> tuple[Vector2, Vector2]:
+    """Advance using exact thrust impulse and start-state non-thrust force."""
+
+    if not math.isfinite(mass_kg) or mass_kg <= 0.0:
+        raise ValueError("mass_kg must be finite and greater than zero")
+    if not math.isfinite(duration_s) or duration_s <= 0.0:
+        raise ValueError("duration_s must be finite and greater than zero")
+    total_impulse_ns = thrust_impulse_ns + other_force_n * duration_s
+    new_velocity = velocity_m_s + total_impulse_ns * (1.0 / mass_kg)
     new_position = position_m + new_velocity * duration_s
     return new_position, new_velocity

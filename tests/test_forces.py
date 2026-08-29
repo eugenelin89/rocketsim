@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rocket_sim import SimulationConfig, Vector2
+from rocket_sim import SimulationConfig, ThrustCurve, Vector2
 from rocket_sim.physics import acceleration_m_s2, gravity_force_n, thrust_force_n
 
 
@@ -25,7 +25,9 @@ def test_thrust_components_at_cardinal_angles(
     angle: float, expected_x: float, expected_y: float
 ) -> None:
     config = SimulationConfig(
-        thrust_n=10.0, launch_angle_rad=angle, gravity_m_s2=0.0
+        thrust_curve=ThrustCurve.constant(10.0, 1.0),
+        launch_angle_rad=angle,
+        gravity_m_s2=0.0,
     )
 
     force = thrust_force_n(config, 0.0)
@@ -37,7 +39,7 @@ def test_thrust_components_at_cardinal_angles(
 def test_net_acceleration_is_force_sum_divided_by_mass() -> None:
     config = SimulationConfig(
         mass_kg=2.0,
-        thrust_n=10.0,
+        thrust_curve=ThrustCurve.constant(10.0, 1.0),
         launch_angle_rad=0.0,
         gravity_m_s2=9.81,
     )
@@ -50,7 +52,9 @@ def test_net_acceleration_is_force_sum_divided_by_mass() -> None:
 
 def test_thrust_uses_exact_half_open_burn_interval() -> None:
     burn_time_s = 1.0
-    config = SimulationConfig(thrust_n=10.0, burn_time_s=burn_time_s)
+    config = SimulationConfig(
+        thrust_curve=ThrustCurve.constant(10.0, burn_time_s)
+    )
 
     assert thrust_force_n(config, 0.0).magnitude == pytest.approx(10.0, abs=1e-12)
     assert thrust_force_n(

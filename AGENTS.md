@@ -41,6 +41,14 @@ Invoke before completing any milestone that changes simulation behavior.
 
 Invoke for changes involving drag, aerodynamic force, air-relative velocity, reference area, drag coefficient, air density, or later aerodynamic models when those domains become active.
 
+### `propulsion_reviewer`
+
+Invoke for changes involving thrust curves, motor burn timing, thrust interpolation, impulse, average or peak thrust, propulsion assumptions, or later motor models.
+
+### `learning_reviewer`
+
+Invoke before completing any milestone that changes physics, propulsion, Physics Inspector content, educational visualization, learner controls, simulator experiments, or Living Rocketry Course content.
+
 ### Write Authority
 
 Specialist reviewers are read-only unless a future approved prompt explicitly changes that rule. The parent Codex agent owns implementation, integration, and final decisions. Do not allow multiple agents to modify overlapping implementation files concurrently.
@@ -60,6 +68,33 @@ Relevant specialists may investigate independently and in parallel. The parent a
 9. commit only after review and validation gates pass
 
 Keep detailed reviewer behavior in `.codex/agents/*.toml`. Keep scientific truth in `docs/PHYSICS_MODEL.md` and validation methodology in `docs/VALIDATION.md`.
+
+## Living Rocketry Course Policy
+
+RocketSim is both a scientifically inspectable simulator and an educational environment for learning rocketry. Maintain `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` as the living tutorial-style course for the validated simulator.
+
+Any approved milestone that adds or materially changes a physical model, force, equation, propulsion model, numerical interpretation important to understanding the physics, physical event or phase, Physics Inspector information, educational visualization, simulator experiment, or user-facing control relevant to learning must review and, where applicable, update the Living Rocketry Course before the milestone is complete.
+
+The parent agent must not wait for a future prompt to explicitly request a course update.
+
+The course must:
+
+- teach only behavior that is currently implemented and validated;
+- clearly distinguish real-world physics from RocketSim's current approximation;
+- use the equations, units, signs, and coordinate conventions in `docs/PHYSICS_MODEL.md`;
+- remain consistent with the methodology and evidence in `docs/VALIDATION.md`;
+- never present future functionality as implemented;
+- connect concepts to hands-on simulator observations and reproducible experiments;
+- state assumptions and model limitations;
+- use prediction, observation, and explanation activities where appropriate;
+- include check-your-understanding questions; and
+- revise older lessons when a later milestone refines an earlier simplification.
+
+Updating the course may require revising an earlier chapter, not merely appending a new chapter. For example, variable mass would require revisiting powered flight and motor lessons; altitude-varying atmosphere would require revisiting drag; wind would require revisiting air-relative velocity; and rotation or stability would require revisiting thrust direction and point-mass assumptions.
+
+Scientific truth remains in `docs/PHYSICS_MODEL.md`. Validation methodology and evidence remain in `docs/VALIDATION.md`. The Living Rocketry Course is their pedagogical explanation, not an independent source of physics truth.
+
+A physics or educational milestone is not complete until applicable Living Rocketry Course material has been reviewed for consistency. The parent agent remains the sole implementer and integrator; `learning_reviewer` and all other specialists remain read-only.
 
 ## Scientific Modeling Policy
 

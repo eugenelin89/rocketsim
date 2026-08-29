@@ -10,8 +10,11 @@ from .config import SimulationConfig, Vector2
 from .physics import (
     ForceBreakdown,
     acceleration_m_s2,
+    drag_force_n,
     force_breakdown_n,
-    semi_implicit_euler,
+    gravity_force_n,
+    semi_implicit_impulse_step,
+    thrust_impulse_n_s,
 )
 
 
@@ -81,6 +84,10 @@ class Simulation:
         return self.current_forces.thrust_n.magnitude
 
     @property
+    def delivered_impulse_ns(self) -> float:
+        return self.config.thrust_curve.delivered_impulse_ns(self._state.time_s)
+
+    @property
     def current_forces(self) -> ForceBreakdown:
         """Return forces at the current state, inactive while still ready."""
 
@@ -114,13 +121,23 @@ class Simulation:
         )
         can_leave_ground = self._state.position_m.y > 0.0
         if self._state.position_m.y == 0.0 and self._state.velocity_m_s.y >= 0.0:
-            first_segment_s = self.config.physics_dt_s
-            if 0.0 < self.config.burn_time_s < first_segment_s:
-                first_segment_s = self.config.burn_time_s
-            trial_position, _ = semi_implicit_euler(
+            first_segment_s = min(
+                (
+                    *self.config.thrust_curve.knots_strictly_between(
+                        0.0, self.config.physics_dt_s
+                    ),
+                    self.config.physics_dt_s,
+                )
+            )
+            initial_other_force = gravity_force_n(
+                self.config.mass_kg, self.config.gravity_m_s2
+            ) + drag_force_n(self.config, self._state.velocity_m_s)
+            trial_position, _ = semi_implicit_impulse_step(
                 self._state.position_m,
                 self._state.velocity_m_s,
-                initial_acceleration,
+                thrust_impulse_n_s(self.config, 0.0, first_segment_s),
+                initial_other_force,
+                self.config.mass_kg,
                 first_segment_s,
             )
             can_leave_ground = trial_position.y > 0.0
@@ -220,32 +237,34 @@ class Simulation:
         self._physics_step_count += 1
 
     def _phase_at(self, time_s: float) -> FlightPhase:
-        if 0.0 <= time_s < self.config.burn_time_s:
+        if 0.0 <= time_s < self.config.thrust_curve.burn_duration_s:
             return FlightPhase.POWERED
         return FlightPhase.COAST
 
     def _advance_fixed_step(self, duration_s: float) -> None:
         start_s = self._state.time_s
         target_s = start_s + duration_s
-        burnout_s = self.config.burn_time_s
-
-        if start_s < burnout_s < target_s:
-            self._advance_segment_to(burnout_s)
-            if not self.is_finished:
-                self._advance_segment_to(target_s)
-        else:
-            self._advance_segment_to(target_s)
+        boundaries = (
+            *self.config.thrust_curve.knots_strictly_between(start_s, target_s),
+            target_s,
+        )
+        for boundary_s in boundaries:
+            self._advance_segment_to(boundary_s)
+            if self.is_finished:
+                break
 
     def _advance_segment_to(self, target_time_s: float) -> None:
         previous = self._state
         duration_s = target_time_s - previous.time_s
-        acceleration = acceleration_m_s2(
-            self.config, previous.time_s, previous.velocity_m_s
-        )
-        trial_position, trial_velocity = semi_implicit_euler(
+        other_force = gravity_force_n(
+            self.config.mass_kg, self.config.gravity_m_s2
+        ) + drag_force_n(self.config, previous.velocity_m_s)
+        trial_position, trial_velocity = semi_implicit_impulse_step(
             previous.position_m,
             previous.velocity_m_s,
-            acceleration,
+            thrust_impulse_n_s(self.config, previous.time_s, target_time_s),
+            other_force,
+            self.config.mass_kg,
             duration_s,
         )
         lifted_off = previous.has_lifted_off or trial_position.y > 0.0

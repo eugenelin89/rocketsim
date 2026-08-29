@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 
+from .propulsion import DEFAULT_EDUCATIONAL_THRUST_CURVE, ThrustCurve
+
 
 @dataclass(frozen=True, slots=True)
 class Vector2:
@@ -41,11 +43,12 @@ def _require_finite(name: str, value: float) -> None:
 
 @dataclass(frozen=True, slots=True)
 class SimulationConfig:
-    """Physical parameters for one deterministic Milestone 2 run."""
+    """Physical parameters for one deterministic sampled-thrust run."""
 
     mass_kg: float = 1.0
-    thrust_n: float = 20.0
-    burn_time_s: float = 1.0
+    thrust_curve: ThrustCurve = field(
+        default_factory=lambda: DEFAULT_EDUCATIONAL_THRUST_CURVE
+    )
     launch_angle_rad: float = math.pi / 2.0
     gravity_m_s2: float = 9.81
     air_density_kg_m3: float = 1.225
@@ -58,8 +61,6 @@ class SimulationConfig:
     def __post_init__(self) -> None:
         scalar_values = {
             "mass_kg": self.mass_kg,
-            "thrust_n": self.thrust_n,
-            "burn_time_s": self.burn_time_s,
             "launch_angle_rad": self.launch_angle_rad,
             "gravity_m_s2": self.gravity_m_s2,
             "air_density_kg_m3": self.air_density_kg_m3,
@@ -74,10 +75,8 @@ class SimulationConfig:
             raise ValueError("mass_kg must be greater than zero")
         if self.physics_dt_s <= 0.0:
             raise ValueError("physics_dt_s must be greater than zero")
-        if self.thrust_n < 0.0:
-            raise ValueError("thrust_n must be non-negative")
-        if self.burn_time_s < 0.0:
-            raise ValueError("burn_time_s must be non-negative")
+        if not isinstance(self.thrust_curve, ThrustCurve):
+            raise TypeError("thrust_curve must be a ThrustCurve")
         if self.gravity_m_s2 < 0.0:
             raise ValueError("gravity_m_s2 must be non-negative")
         if self.air_density_kg_m3 < 0.0:

@@ -74,16 +74,56 @@ Validation:
 - active-drag burnout, reset, and FPS-independence regressions
 - renderer sourcing and non-mutation evidence
 
+## Milestone 3 — Sampled motor thrust curves and Living Rocketry Course
+
+Status: complete in Prompt 04.
+
+Physics:
+
+- immutable sampled thrust data and piecewise-linear interpolation
+- burn duration derived from the final curve sample
+- exact total, delivered, and interval motor impulse
+- fixed world thrust direction and constant rocket mass
+- exact thrust-impulse velocity contribution on every knot-bounded segment
+- gravity plus segment-start-velocity quadratic drag retained
+- constant-thrust and zero-thrust limiting curves
+
+Features:
+
+- current, peak, and average thrust plus delivered/total impulse in the Physics Inspector
+- production-data motor timeline with samples, cursor, peak, and burnout marker
+- paused single-step updates across thrust knots while remaining paused
+- permanent Living Rocketry Course and retroactive update policy
+- persistent propulsion and learning reviewers
+
+Validation:
+
+- independent curve validation, interpolation, and trapezoidal metrics
+- one/multiple-knot and nonaligned-burn-end literal oracles
+- zero-gravity/zero-drag impulse–momentum agreement
+- Prompt 03 constant-thrust, zero-thrust, drag, lifecycle, timing, and rendering regressions
+- active-drag convergence against an independent RK4 reference
+- sampled-thrust FPS independence and deterministic reset
+- Inspector/timeline production sourcing, non-mutation, and SDL smoke evidence
+
+The default is a synthetic educational curve, not measured motor data. Variable mass and propellant depletion remain unimplemented.
+
+## Standing cross-cutting requirement — Learning Course impact review
+
+Every future approved milestone must identify whether it changes physics, equations, numerical interpretation, phases/events, Inspector information, educational visualization, controls, or experiments. Applicable chapters of `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` must be revised and the complete course reviewed before that milestone is complete. This requirement may revise earlier chapters rather than merely append a new one.
+
 ## Later candidate milestones
 
 The following remain unimplemented and require separate approval and validation:
 
 1. variable mass and propellant depletion
-2. sampled real-motor thrust curves and total impulse
+2. validated real-motor data ingestion
 3. atmospheric density and speed of sound
 4. wind and recovery
 5. rotational dynamics and aerodynamic stability
 6. headless experiment export and reproducibility tooling
 7. calibrated real-flight comparison and uncertainty analysis
+
+Each candidate milestone includes a Living Course impact review as a completion gate.
 
 Advanced guidance, control, optimization, machine learning, and multi-vehicle work are research directions only. They must not be inferred from the current 2D point-mass model.

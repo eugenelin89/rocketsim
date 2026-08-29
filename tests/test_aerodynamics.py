@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rocket_sim import SimulationConfig, Vector2
+from rocket_sim import SimulationConfig, ThrustCurve, Vector2
 from rocket_sim.physics import (
     acceleration_m_s2,
     drag_force_n,
@@ -10,11 +10,10 @@ from rocket_sim.physics import (
 )
 
 
-def _aerodynamic_config(**overrides: float) -> SimulationConfig:
+def _aerodynamic_config(**overrides: object) -> SimulationConfig:
     values = {
         "mass_kg": 2.0,
-        "thrust_n": 10.0,
-        "burn_time_s": 2.0,
+        "thrust_curve": ThrustCurve.constant(10.0, 2.0),
         "launch_angle_rad": 0.0,
         "gravity_m_s2": 3.0,
         "air_density_kg_m3": 2.0,
@@ -22,7 +21,7 @@ def _aerodynamic_config(**overrides: float) -> SimulationConfig:
         "reference_area_m2": 0.25,
     }
     values.update(overrides)
-    return SimulationConfig(**values)
+    return SimulationConfig(**values)  # type: ignore[arg-type]
 
 
 def test_drag_is_exactly_zero_at_zero_air_relative_speed() -> None:
@@ -106,8 +105,7 @@ def test_force_breakdown_and_acceleration_match_literal_oracle() -> None:
 def test_terminal_velocity_is_force_equilibrium_with_restoring_signs() -> None:
     config = SimulationConfig(
         mass_kg=2.0,
-        thrust_n=0.0,
-        burn_time_s=0.0,
+        thrust_curve=ThrustCurve.zero(),
         gravity_m_s2=8.0,
         air_density_kg_m3=2.0,
         drag_coefficient=1.0,

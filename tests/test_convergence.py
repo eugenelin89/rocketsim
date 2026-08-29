@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rocket_sim import Simulation, SimulationConfig, Vector2
+from rocket_sim import Simulation, SimulationConfig, ThrustCurve, Vector2
 
 
 def _powered_position_error(dt: float) -> float:
@@ -10,8 +10,7 @@ def _powered_position_error(dt: float) -> float:
     simulation = Simulation(
         SimulationConfig(
             mass_kg=2.0,
-            thrust_n=12.0,
-            burn_time_s=2.0,
+            thrust_curve=ThrustCurve.constant(12.0, 2.0),
             launch_angle_rad=0.0,
             gravity_m_s2=0.0,
             air_density_kg_m3=0.0,
@@ -37,7 +36,11 @@ def test_semi_implicit_euler_has_first_order_position_convergence() -> None:
 
 def _default_landing_time_error(dt: float, analytical_time_s: float) -> float:
     simulation = Simulation(
-        SimulationConfig(physics_dt_s=dt, air_density_kg_m3=0.0)
+        SimulationConfig(
+            thrust_curve=ThrustCurve.constant(20.0, 1.0),
+            physics_dt_s=dt,
+            air_density_kg_m3=0.0,
+        )
     )
     simulation.launch()
     for _ in range(2000):

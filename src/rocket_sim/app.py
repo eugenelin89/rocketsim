@@ -41,7 +41,7 @@ def run(max_frames: int | None = None) -> int:
     pygame.init()
     try:
         surface = pygame.display.set_mode(WINDOW_SIZE)
-        pygame.display.set_caption("RocketSim - quadratic-drag Physics Inspector")
+        pygame.display.set_caption("RocketSim - sampled-thrust flight laboratory")
         clock = pygame.time.Clock()
         simulation = Simulation()
         renderer = Renderer(*WINDOW_SIZE)

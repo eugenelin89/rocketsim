@@ -1,23 +1,29 @@
 # Pygame Rocket Physics Simulator
 
-RocketSim is a scientifically inspectable 2D model-rocket flight simulator built with Python and Pygame. Its current milestone models a constant-mass point rocket under gravity, finite-duration constant thrust, and constant-property quadratic aerodynamic drag in still air. A fixed physics timestep remains independent of display FPS.
+RocketSim is a scientifically inspectable 2D model-rocket flight simulator and interactive rocketry-learning laboratory built with Python and Pygame. Its current milestone models a constant-mass point rocket under gravity, a sampled time-varying thrust curve, and constant-property quadratic aerodynamic drag in still air. A fixed outer physics timestep remains independent of display FPS.
+
+Start with the [Living Rocketry Course](docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md) to learn the implemented physics through prediction, observation, and hands-on simulator experiments.
 
 ## Current status
 
-Milestone 2 is implemented. The runnable application includes a Physics Inspector and force-vector overlay while a Pygame-independent physics core remains the sole owner of force calculations, integration, event transitions, and history.
+Milestone 3 is implemented. The runnable application includes a Physics Inspector, force-vector overlay, and motor thrust timeline while a Pygame-independent physics core remains the sole owner of force calculations, integration, event transitions, and history.
 
 Implemented physics:
 
 - SI units and world coordinates with +x right and +y up
 - constant mass and constant gravity
-- constant thrust at a fixed world angle for `0 <= t < burn_time`
+- immutable sampled thrust with piecewise-linear `T(t)` at a fixed world angle
+- exact total/delivered motor impulse for the represented curve
+- burn duration derived from the final sample and a half-open burn endpoint
 - constant density, drag coefficient, and reference area
 - still-air quadratic drag `F_drag = -0.5 rho Cd A |v_air| v_air`
 - fixed `0.01 s` physics timestep and semi-implicit Euler integration
-- exact substep split when a fixed step crosses burnout
+- exact internal split at every crossed thrust knot and burnout
 - deterministic ground-return termination after liftoff
 
-The aerodynamic defaults are educational constants, not calibration of a real vehicle: `rho = 1.225 kg/m^3`, `Cd = 0.75`, and `A = 0.01 m^2`. Variable mass, sampled thrust curves, wind, atmosphere variation, lift, recovery, rotation, stability, guidance, and control are not implemented.
+The propulsion default is self-authored synthetic educational data, not measured or certified motor data. It has `1.05 s` duration, `17.58 N*s` total impulse, `28 N` peak thrust, and `16.742857... N` average thrust. The aerodynamic defaults are educational constants, not calibration of a real vehicle: `rho = 1.225 kg/m^3`, `Cd = 0.75`, and `A = 0.01 m^2`.
+
+Variable mass, propellant depletion, motor-data import, launch-pad/rail contact, wind, atmosphere variation, lift, recovery, rotation, stability, guidance, and control are not implemented.
 
 ## Setup and validation
 
@@ -46,7 +52,9 @@ Controls:
 - `I`: show or hide the Physics Inspector
 - `ESC`: exit
 
-The inspector shows phase, burnout status, state, acceleration, mass, all force vectors and magnitudes, the aerodynamic constants, and the implemented equations. Thrust, gravity, drag, and net-force arrows use the same rendering-only scale and are sourced from the force breakdown used by the simulator. The default vertical configuration uses a `1 kg` rocket, `20 N` thrust, a `1 s` burn, and `9.81 m/s^2` gravity, so thrust exceeds weight during launch.
+The inspector shows flight and motor phase, burnout status, state, acceleration, constant mass, current/peak/average thrust, burn-time progress, delivered/total impulse, all force vectors and magnitudes, aerodynamic constants, and implemented equations. The timeline plots the exact production samples and current motor-time cursor; after burnout its endpoint-clamped cursor is labeled as such. Thrust, gravity, drag, and net-force arrows use the same rendering-only scale and are sourced from the force breakdown used by the simulator.
+
+The default vertical configuration uses a `1 kg` rocket and begins at `12 N`, above its `9.81 N` weight. The original zero-at-ignition educational curve is tested only away from the ground boundary because RocketSim does not model a launch-pad support force.
 
 ## Repository layout
 
@@ -54,6 +62,7 @@ The inspector shows phase, burnout status, state, acceleration, mass, all force 
 .codex/agents/         persistent read-only specialist reviewer definitions
 src/rocket_sim/        configuration, physics, lifecycle, rendering, and app code
 tests/                 headless physics, numerical, lifecycle, and rendering tests
+docs/learning/         learner-facing Living Rocketry Course
 docs/product/          current implementation understanding
 docs/prompts/          prompt and implementation history
 docs/decisions/        durable scientific and workflow decisions

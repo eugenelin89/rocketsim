@@ -1,6 +1,6 @@
 # Physics Model
 
-## Implemented Milestone 2 model
+## Implemented Milestone 3 model
 
 RocketSim models one constant-mass point rocket in a two-dimensional flat world. It uses SI units internally:
 
@@ -18,9 +18,9 @@ World +x is horizontal/right, world +y is upward, and the ground is `y = 0`. Scr
 
 ## State and configuration
 
-Each recorded state contains simulation time, position, velocity, instantaneous acceleration, constant mass, flight phase, and whether liftoff has occurred. Configuration contains mass, thrust magnitude, burn duration, fixed world launch angle, gravity magnitude, constant air density, constant drag coefficient, constant reference area, fixed physics timestep, and initial position and velocity.
+Each recorded state contains simulation time, position, velocity, instantaneous acceleration, constant mass, flight phase, and whether liftoff has occurred. Configuration contains mass, one immutable sampled thrust curve, fixed world launch angle, gravity magnitude, constant air density, constant drag coefficient, constant reference area, fixed outer physics timestep, and initial position and velocity.
 
-All scalar and vector inputs must be finite. Mass and timestep must be positive. Thrust, burn duration, gravity magnitude, air density, drag coefficient, and reference area may be zero but not negative. Initial altitude may not be below ground.
+All scalar and vector inputs must be finite. Mass and timestep must be positive. Gravity magnitude, air density, drag coefficient, reference area, sample times, and sample thrust values may be zero but not negative. Initial altitude may not be below ground. A normal thrust curve has at least two samples, begins at exactly `t=0`, and has strictly increasing times. The zero-duration limiting curve is the single sample `(0 s, 0 N)`.
 
 The default aerodynamic values are educational constants:
 
@@ -50,18 +50,36 @@ These are numerically equal in this milestone but are not interchangeable physic
 
 ## Forces and acceleration
 
-For constant mass `m > 0`, gravity magnitude `g >= 0`, thrust magnitude `T >= 0`, fixed angle `theta`, burnout time `t_b >= 0`, air density `rho >= 0`, drag coefficient `Cd >= 0`, reference area `A >= 0`, and air-relative velocity vector `v_air`:
+For constant mass `m > 0`, gravity magnitude `g >= 0`, time-varying thrust magnitude `T(t) >= 0`, fixed angle `theta`, curve-defined burnout time `t_b >= 0`, air density `rho >= 0`, drag coefficient `Cd >= 0`, reference area `A >= 0`, and air-relative velocity vector `v_air`:
 
 ```text
 F_g = (0, -m g)
 ```
 
-Thrust uses the exact half-open time interval:
+The fixed world thrust direction is:
 
 ```text
-F_T(t) = T(cos(theta), sin(theta))  when 0 <= t < t_b
-F_T(t) = (0, 0)                    otherwise
+u_T = (cos(theta), sin(theta))
+F_T(t) = T(t) u_T
 ```
+
+For adjacent stored samples `(t_i,T_i)` and `(t_(i+1),T_(i+1))`, instantaneous thrust is piecewise linear:
+
+```text
+T(t) = T_i
+       + (T_(i+1) - T_i)
+         (t - t_i) / (t_(i+1) - t_i)
+```
+
+The burn interval remains exactly half-open:
+
+```text
+T(t) = 0  for t < 0
+T(t_i) = T_i  at an interior knot
+T(t) = 0  for t >= t_b
+```
+
+The final stored thrust is the left-limit endpoint of the last linear interval even if it is nonzero; it contributes to the final trapezoidal impulse although instantaneous thrust at exact burn end is zero.
 
 Define:
 
@@ -99,20 +117,61 @@ F_net = F_T + F_g + F_drag
 a = F_net / m
 ```
 
-Production code exposes these named vectors in one immutable `ForceBreakdown`. Integration and presentation consume the same calculation. Mass remains constant at ignition, burnout, coast, descent, and landing.
+Production code exposes these named instantaneous vectors in one immutable `ForceBreakdown` for state telemetry and presentation. Integration uses the same gravity and drag helpers but replaces instantaneous thrust with the exact curve impulse over each internal segment, so thrust is not counted twice. Mass remains constant at ignition, burnout, coast, descent, and landing.
+
+## Motor impulse and metrics
+
+Total motor impulse is the exact area under the stored piecewise-linear curve:
+
+```text
+I_total = integral T(t) dt
+        = sum[0.5 (T_i + T_(i+1)) (t_(i+1) - t_i)]
+```
+
+Impulse has units `N*s = kg*m/s`. Delivered impulse clamps the query time to the represented burn:
+
+```text
+I_delivered(t) = integral from 0 to clamp(t, 0, t_b) of T(tau) d tau
+```
+
+It is zero before ignition, monotonic because thrust is non-negative, and equals total impulse at and after burn end. Average and peak thrust are:
+
+```text
+T_average = I_total / t_b  for t_b > 0
+T_average = 0              for the zero-duration curve
+T_peak,stored = max stored sample thrust
+```
+
+Piecewise-linear interpolation cannot exceed its endpoint samples, so this stored peak is the exact supremum of the represented polyline. If a unique nonzero peak occurs only at the final stored endpoint, it is a left-limit value rather than an attained value of the public half-open instantaneous function, because `T(t_b) = 0`. It is not a claim that sparse samples capture the true peak of a measured motor.
+
+For constant mass with gravity and drag disabled, thrust impulse gives:
+
+```text
+delta_v = (I_total / m) u_T
+```
+
+With gravity and drag active, the general momentum balance also includes their impulses. Equal motor impulse alone need not produce the same trajectory.
 
 ## Numerical integration
 
-The default fixed physics timestep remains `dt = 0.01 s`. For each numerical segment, all forces are evaluated from the segment's starting time and velocity. Semi-implicit Euler then updates velocity before position:
+The default fixed outer physics timestep remains `dt = 0.01 s`. Every outer step is split internally at each strictly crossed thrust-curve knot, including a non-aligned burn end. For one internal segment `[t_n,t_(n+1)]` of duration `h`, RocketSim integrates the represented linear thrust exactly while retaining the established explicit drag and semi-implicit position rules:
 
 ```text
-F_n = F(t_n, v_n)
-a_n = F_n / m
-v_(n+1) = v_n + a_n dt
-p_(n+1) = p_n + v_(n+1) dt
+J_T = integral from t_n to t_(n+1) of T(t) dt
+    = 0.5 (T_left + T_right) h
+
+F_other_start = F_g + F_drag(v_n)
+
+v_(n+1) = v_n
+            + (J_T / m) u_T
+            + (F_other_start / m) h
+
+p_(n+1) = p_n + v_(n+1) h
 ```
 
-Drag depends on velocity, so acceleration is not constant over the true continuous interval. The method freezes it only for one numerical segment. Prompt 02's constant-acceleration identity:
+`T_left` and `T_right` above are the stored ordinates that bound the represented linear interval. On the final interval, a nonzero `T_right` is the burn-end left limit used by the trapezoid even though the public instantaneous value at exact burnout is zero.
+
+The motor impulse contribution to velocity is exact for every completed internal segment of the stored polyline, and gravity's velocity impulse is exact because gravity is constant. Position is not exact, and drag remains frozen from segment-start velocity. Prompt 02's constant-acceleration identity:
 
 ```text
 p_numerical - p_analytical = 0.5 a t dt
@@ -120,7 +179,9 @@ p_numerical - p_analytical = 0.5 a t dt
 
 continues to apply to the zero-drag constant-acceleration limit, but not generally with active drag. Active-drag accuracy is established by direct comparison with a nonlinear analytical solution and measured timestep convergence.
 
-If a configured step begins before burnout and ends after it, the simulator performs a powered substep ending exactly at `t_b`, followed by a coast substep for the remainder. The coast substep reevaluates drag from the updated burnout velocity. A state at exact burnout reports zero thrust and force/acceleration evaluated from its burnout velocity.
+If a configured outer step crosses one or more curve knots, every boundary produces a completed internal segment and drag is reevaluated from the updated boundary velocity. A state at exact burnout reports zero thrust and force/acceleration evaluated from its burnout velocity. The outer wall-time accumulator and physics-step count still advance once per configured outer timestep.
+
+Because curve knots are numerical boundaries, adding a redundant collinear sample can introduce an extra drag/position update even though it leaves `T(t)` and motor impulse unchanged. The immutable sample set is therefore part of the numerical configuration. Convergence comparisons keep the same knot set.
 
 Recorded acceleration is always the instantaneous force result for the recorded state's time and velocity, not the acceleration frozen over the preceding segment. This also applies to the interpolated impact velocity.
 
@@ -155,7 +216,11 @@ At `v_y = -v_terminal`, upward drag balances downward weight and net vertical ac
 
 ## Ground boundary and lifecycle presentation
 
-Ground admission, liftoff, and landing retain Prompt 02 semantics. A ground start must have non-negative initial vertical velocity and a positive first drag-inclusive numerical endpoint. After liftoff, the first descending numerical segment that crosses `y = 0` is linearly interpolated in time, horizontal position, and velocity; altitude is set to exactly zero and the state becomes terminal. This is deterministic interpolation of the discrete numerical path, not an exact impact root.
+Ground admission, liftoff, and landing retain Prompt 02 semantics. A ground start must have non-negative initial vertical velocity and a positive first propulsion-aware internal numerical endpoint. That endpoint uses exact curve impulse plus gravity and start-velocity drag; it does not sample only `T(0)`. RocketSim still has no launch-pad, rail, normal-force, or hold-down model.
+
+The original proposed educational curve began at zero thrust and would move below ground in the first free-flight timestep. It is therefore retained only as an airborne or zero-gravity validation example, not as the ground-launch default. The actual default begins at `12 N`, above the default rocket's `9.81 N` weight. This is a model-scope correction, not a hidden ground clamp.
+
+After liftoff, the first descending numerical segment that crosses `y = 0` is linearly interpolated in time, horizontal position, and velocity; altitude is set to exactly zero and the state becomes terminal. This is deterministic interpolation of the discrete numerical path, not an exact impact root. If impact occurs during time-varying thrust, the interpolated impact velocity is not claimed to equal an exact partial-segment impulse solution. Current forces and delivered impulse are nevertheless recomputed from the reported impact time and velocity.
 
 A post-liftoff landed state represents the instant of impact. Its displayed drag is evaluated from the nonzero interpolated impact velocity, although no later motion is integrated. An unsupported ground start instead becomes a terminal no-liftoff initial state; it is not labeled as impact, and its force/acceleration snapshot describes the attempted launch. Before launch, READY deliberately reports zero/inactive forces and zero stored acceleration rather than implying thrust is already active or inventing an unmodeled pad-support force.
 
@@ -163,8 +228,17 @@ A post-liftoff landed state represents the instant of impact. Its displayed drag
 
 ```text
 mass              1.0 kg
-thrust            20.0 N
-burn duration     1.0 s
+sampled thrust    (0.00 s, 12 N)
+                  (0.05 s, 28 N)
+                  (0.12 s, 24 N)
+                  (0.35 s, 20 N)
+                  (0.70 s, 16 N)
+                  (0.95 s,  8 N)
+                  (1.05 s,  0 N)
+burn duration     1.05 s
+total impulse     17.58 N*s
+peak thrust       28.0 N
+average thrust    16.742857... N
 launch angle      pi/2 rad (vertical)
 gravity           9.81 m/s^2
 air density       1.225 kg/m^3
@@ -173,10 +247,10 @@ reference area    0.01 m^2
 physics timestep  0.01 s
 ```
 
-For this educational approximation, the vertical terminal speed under gravity alone is about `46.21 m/s`. The default flight remains capable of liftoff.
+The thrust curve is self-authored synthetic educational data, not measurement or certification of a commercial motor. For this educational approximation, the vertical terminal speed under gravity alone is about `46.21 m/s`. The default flight remains capable of liftoff without a pad-support rule.
 
 ## Explicit omissions and interpretation limits
 
-The model has no wind, altitude-varying density, pressure or temperature, lift, orientation-dependent area, variable `Cd`, Mach/Reynolds/compressibility effects, propellant depletion, variable mass, sampled thrust curve, attitude change, rotation, aerodynamic stability, recovery device, bounce, structural dynamics, Earth curvature, or Coriolis effect. Its single direction-independent effective area makes it an isotropic point-mass drag approximation.
+The model has no wind, altitude-varying density, pressure or temperature, lift, orientation-dependent area, variable `Cd`, Mach/Reynolds/compressibility effects, propellant depletion, variable mass, measured motor-data import, pad or launch-rail contact, attitude change, rotation, aerodynamic stability, recovery device, bounce, structural dynamics, Earth curvature, or Coriolis effect. Its single direction-independent effective area makes it an isotropic point-mass drag approximation.
 
 No empirical game-feel constants or clamps are applied. The model assumes physically meaningful finite inputs; extreme finite combinations can exceed floating-point range and are not a claim of physical applicability. Results are a validated learning model, not calibrated real-flight or engineering-grade predictions.

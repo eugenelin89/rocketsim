@@ -2,7 +2,13 @@ import math
 
 import pytest
 
-from rocket_sim import FlightPhase, Simulation, SimulationConfig, Vector2
+from rocket_sim import (
+    FlightPhase,
+    Simulation,
+    SimulationConfig,
+    ThrustCurve,
+    Vector2,
+)
 from rocket_sim.physics import force_breakdown_n
 
 
@@ -10,8 +16,7 @@ def _run_vertical_fall(dt: float) -> Simulation:
     simulation = Simulation(
         SimulationConfig(
             mass_kg=2.0,
-            thrust_n=0.0,
-            burn_time_s=0.0,
+            thrust_curve=ThrustCurve.zero(),
             gravity_m_s2=8.0,
             air_density_kg_m3=2.0,
             drag_coefficient=1.0,
@@ -80,8 +85,7 @@ def test_each_zero_aerodynamic_parameter_recovers_prompt_02_motion(
 ) -> None:
     parameters = {
         "mass_kg": 2.0,
-        "thrust_n": 12.0,
-        "burn_time_s": 2.0,
+        "thrust_curve": ThrustCurve.constant(12.0, 2.0),
         "launch_angle_rad": math.radians(30.0),
         "gravity_m_s2": 3.0,
         "air_density_kg_m3": 2.0,

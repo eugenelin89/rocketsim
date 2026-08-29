@@ -2,7 +2,13 @@ import math
 
 import pytest
 
-from rocket_sim import FlightPhase, Simulation, SimulationConfig, Vector2
+from rocket_sim import (
+    FlightPhase,
+    Simulation,
+    SimulationConfig,
+    ThrustCurve,
+    Vector2,
+)
 
 
 def _run_steps(simulation: Simulation, count: int) -> None:
@@ -15,8 +21,7 @@ def test_gravity_only_matches_independent_projectile_reference() -> None:
     dt = 0.01
     duration = 1.0
     config = SimulationConfig(
-        thrust_n=0.0,
-        burn_time_s=0.0,
+        thrust_curve=ThrustCurve.zero(),
         gravity_m_s2=9.81,
         air_density_kg_m3=0.0,
         physics_dt_s=dt,
@@ -48,8 +53,7 @@ def test_powered_motion_matches_independent_constant_acceleration_reference() ->
     gravity = 3.0
     config = SimulationConfig(
         mass_kg=mass,
-        thrust_n=thrust,
-        burn_time_s=2.0,
+        thrust_curve=ThrustCurve.constant(thrust, 2.0),
         launch_angle_rad=angle,
         gravity_m_s2=gravity,
         air_density_kg_m3=0.0,
@@ -79,7 +83,11 @@ def test_powered_motion_matches_independent_constant_acceleration_reference() ->
 
 def test_piecewise_powered_and_coast_motion_matches_closed_form_error() -> None:
     dt = 0.01
-    config = SimulationConfig(physics_dt_s=dt, air_density_kg_m3=0.0)
+    config = SimulationConfig(
+        thrust_curve=ThrustCurve.constant(20.0, 1.0),
+        physics_dt_s=dt,
+        air_density_kg_m3=0.0,
+    )
     simulation = Simulation(config)
     _run_steps(simulation, 150)
 
@@ -109,17 +117,22 @@ def test_piecewise_powered_and_coast_motion_matches_closed_form_error() -> None:
 def test_default_vertical_launch_has_negligible_horizontal_motion() -> None:
     simulation = Simulation()
     _run_steps(simulation, 150)
+    half_second = min(
+        simulation.trajectory, key=lambda state: abs(state.time_s - 0.5)
+    )
+    one_second = min(
+        simulation.trajectory, key=lambda state: abs(state.time_s - 1.0)
+    )
 
     assert abs(simulation.state.position_m.x) < 1e-12
-    assert simulation.trajectory[50].velocity_m_s.y > 0.0
-    assert simulation.state.velocity_m_s.y < simulation.trajectory[100].velocity_m_s.y
+    assert half_second.velocity_m_s.y > 0.0
+    assert simulation.state.velocity_m_s.y < one_second.velocity_m_s.y
 
 
 def test_zero_gravity_powered_then_coast_limit() -> None:
     config = SimulationConfig(
         mass_kg=2.0,
-        thrust_n=8.0,
-        burn_time_s=0.5,
+        thrust_curve=ThrustCurve.constant(8.0, 0.5),
         launch_angle_rad=0.0,
         gravity_m_s2=0.0,
         air_density_kg_m3=0.0,
@@ -136,8 +149,7 @@ def test_zero_gravity_powered_then_coast_limit() -> None:
 
 def test_zero_force_preserves_uniform_motion() -> None:
     config = SimulationConfig(
-        thrust_n=0.0,
-        burn_time_s=0.0,
+        thrust_curve=ThrustCurve.zero(),
         gravity_m_s2=0.0,
         air_density_kg_m3=0.0,
         physics_dt_s=0.01,

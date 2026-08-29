@@ -2,7 +2,7 @@
 
 ## Evidence standard
 
-RocketSim validates simple cases against independently calculated answers before relying on integrated flight behavior. Expected force values and analytical trajectories in tests are calculated directly from literal parameters and equations, not by calling the production drag or force-breakdown helpers. A finer production run is not used as the sole nonlinear oracle.
+RocketSim validates simple cases against independently calculated answers before relying on integrated flight behavior. Expected force values, thrust interpolation, impulse, motor metrics, and analytical trajectories in tests are calculated directly from literal parameters and equations, not by calling production curve, drag, or force-breakdown helpers. A finer production run is not used as the sole nonlinear oracle.
 
 The complete suite runs headlessly with:
 
@@ -12,9 +12,69 @@ conda run -n rocketsim python -m pytest
 
 ## Prompt 02 regression baseline
 
-Prompt 02 gravity/thrust tests explicitly set air density to zero when their references assume constant acceleration. They retain force signs, the half-open burn predicate, semi-implicit update ordering, exact non-aligned burnout split, constant-mass behavior, analytical gravity/powered/piecewise motion, the known constant-acceleration position-error identity, ground interpolation, reset, strict accumulator semantics, and display-FPS independence.
+Prompt 02 gravity/thrust tests explicitly use a two-sample constant-thrust curve and set air density to zero when their references assume constant acceleration. They retain force signs, the half-open burn predicate, semi-implicit update ordering, exact non-aligned burnout split, constant-mass behavior, analytical gravity/powered/piecewise motion, the known constant-acceleration position-error identity, ground interpolation, reset, strict accumulator semantics, and display-FPS independence.
 
 An additional integrated analytical case independently verifies that each of `rho = 0`, `Cd = 0`, and `A = 0` produces the same literal Prompt 02 result. There is no separate no-drag implementation.
+
+## Sampled propulsion data and metrics
+
+Independent tests cover:
+
+- immutable sample and curve ownership;
+- finite, non-negative samples;
+- exact first time zero and strictly increasing later times;
+- duplicate/decreasing/empty rejection;
+- the single-sample `(0,0)` zero-duration limit;
+- exact stored values at interior knots;
+- literal midpoint interpolation on rising and falling intervals;
+- zero thrust before ignition and at/after the half-open burn end;
+- a nonzero final stored sample that contributes to the last trapezoid while instantaneous burn-end thrust is zero;
+- triangle, rectangle, and multi-segment total impulse;
+- partial and cross-segment delivered impulse;
+- delivered-impulse monotonicity and interval additivity;
+- constant- and zero-thrust factories; and
+- independently calculated average and peak thrust.
+
+The launchable synthetic default is:
+
+```text
+(0.00 s, 12 N)
+(0.05 s, 28 N)
+(0.12 s, 24 N)
+(0.35 s, 20 N)
+(0.70 s, 16 N)
+(0.95 s,  8 N)
+(1.05 s,  0 N)
+```
+
+Literal trapezoid areas are `1.00`, `1.82`, `5.06`, `6.30`, `3.00`, and `0.40 N*s`, giving:
+
+```text
+burn duration  1.05 s
+total impulse  17.58 N*s
+peak thrust    28 N
+average thrust 16.742857142857... N
+```
+
+The originally proposed zero-at-ignition curve retains independently verified `17.28 N*s` total impulse in an airborne, zero-gravity, zero-drag case. It is not used as the ground-launch default because its first `0.01 s` interval delivers only `0.028 N*s` upward while gravity delivers `0.0981 N*s` downward.
+
+## Exact propulsion impulse and knot boundaries
+
+One-knot and multi-knot tests use literal impulse and position oracles, so a whole-step method that happens to deliver the right final velocity cannot conceal missing internal segmentation. One `0.5 s` outer step crossing `0.1`, `0.2`, and `0.3 s` knots produces exactly one state at each knot, increments the outer step count once, and reaches the independently derived `vx=1.2 m/s`, `x=0.31 m` result.
+
+A constant `4 N` curve ending at the non-grid-aligned time `0.35 s` with `dt=0.2 s` delivers exactly `1.4 N*s`, creates one POWERED-to-COAST transition, reports zero instantaneous thrust at burnout, and ends the second outer step at `vx=1.4 m/s`, `x=0.44 m` with no excess thrust.
+
+With gravity and drag disabled, a literal `10 N*s` curve, `m=2 kg`, and a fixed 30-degree direction produces exactly the independent vector result:
+
+```text
+delta_v = 5 (cos(30 deg), sin(30 deg)) m/s
+```
+
+This validates motor impulse–momentum without using production total-impulse helpers as the oracle.
+
+With active drag, a literal first segment uses `J_T=0.4 N*s`, independently calculated start drag `(-1.875,-2.5) N`, and gravity `(0,-6) N` to reach `v=(3.10625,3.575) m/s` and `p=(1.310625,10.3575) m`. Resulting-state telemetry then uses instantaneous `T(0.1)=6 N` and drag recalculated from that resulting velocity, proving that segment-average thrust is not displayed as current thrust.
+
+An additional multi-knot active-drag case independently verifies that drag is reevaluated at every curve knot. This is why the configured knot set is documented as part of the numerical mesh.
 
 ## Aerodynamic configuration and force algebra
 
@@ -86,6 +146,25 @@ The analytical fall produced these absolute errors:
 
 Velocity error ratios as timestep halves are approximately `1.992` and `1.996`; altitude ratios are approximately `2.000` and `2.000`. This measured evidence is consistent with the expected first-order global behavior. It is not a claim of exact constant-acceleration error under active drag.
 
+## Sampled-thrust active-drag convergence
+
+A test-local standard-library RK4 oracle independently implements literal sampled thrust, gravity, and quadratic drag. It does not call production interpolation, force, impulse, or stepping helpers. At `t=0.6 s`, its reference is:
+
+```text
+position = (2.086955589988, 100.340594347210) m
+velocity = (4.360834957988, -0.023157593980) m/s
+```
+
+Production errors for the same immutable knot set were:
+
+| `dt` (s) | position-vector error (m) | velocity-vector error (m/s) |
+| ---: | ---: | ---: |
+| 0.020 | 0.0261762225 | 0.0046348364 |
+| 0.010 | 0.0136805265 | 0.0024161277 |
+| 0.005 | 0.0068400396 | 0.0012071078 |
+
+Position-error ratios were approximately `1.913` and `2.000`; velocity-error ratios were approximately `1.918` and `2.002`. This is measured evidence consistent with first-order convergence for the selected stable case. Separate zero-gravity/zero-drag runs at all three timesteps reproduce the exact literal motor-impulse velocity to roundoff, isolating the remaining numerical error to position and velocity-dependent drag treatment.
+
 ## Terminal velocity
 
 With the same analytical parameters, tests calculate the expected forces independently:
@@ -105,6 +184,7 @@ The suite verifies:
 - constant mass throughout active-drag flight;
 - deterministic reset/rerun with velocity-dependent feedback;
 - equal state and trajectory for active-drag elapsed time partitioned at 30, 60, and 144 FPS, including an exact burnout boundary;
+- equal state, trajectory, force telemetry, and delivered impulse for the sampled default with active drag partitioned at 30, 60, and 144 FPS through the public accumulator;
 - paused RIGHT-arrow stepping advances one configured outer step, preserves fractional accumulator residue, remains paused, and retains burnout splitting; and
 - RIGHT is inactive before launch, while running, and after landing.
 
@@ -119,6 +199,10 @@ Automated evidence covers:
 - one shared display scale for thrust, gravity, drag, and net force;
 - four sentinel production force vectors reaching all four arrow endpoint calculations at that same scale;
 - Inspector presence of state, all force values, aerodynamic parameters, and implemented equations;
+- Inspector current thrust, motor phase, burn-time progress, duration, peak/average thrust, delivered/total impulse, and time-varying thrust/impulse equations;
+- timeline geometry derived from the configured production curve's exact samples and current simulation time;
+- timeline cursor clamping that is explicitly labeled after burnout rather than misrepresented as coast simulation time;
+- production-curve identity reaching the renderer without a second curve, interpolation, or trapezoid implementation;
 - distinct Inspector labels for post-liftoff impact and terminal no-liftoff initial states;
 - the renderer reading `Simulation.current_forces` while containing no drag helper or drag equation implementation;
 - rendering with overlays enabled and disabled without mutating state, history, accumulator, or configuration;
@@ -130,7 +214,7 @@ The real SDL application launched successfully and remained live until intention
 
 Visual inspection supplements these automated checks but is not the scientific oracle.
 
-## Current Prompt 03 suite result
+## Prompt 03 historical suite result
 
 After specialist review corrections, the complete suite reports:
 
@@ -138,7 +222,17 @@ After specialist review corrections, the complete suite reports:
 119 passed
 ```
 
-Focused aerodynamic, analytical, convergence, integration, lifecycle, timing, and rendering groups also pass independently, as does the bounded SDL dummy application smoke test.
+Prompt 03 completed with 119 passing tests. Prompt 04 preserves those contracts through constant and zero sampled-curve limiting cases.
+
+## Current Prompt 04 suite result
+
+After post-implementation specialist corrections, the complete implementation and documentation-development suite reports:
+
+```text
+162 passed
+```
+
+Focused propulsion, impulse, knot, active-drag, convergence, lifecycle, accumulator, rendering, and Living Course executable-contract groups pass independently.
 
 ## Full validation procedure
 
@@ -156,7 +250,8 @@ git diff --check
 ```
 
 Focused aerodynamic, analytical, convergence, integration, lifecycle, accumulator, and rendering tests are also run separately.
+Focused propulsion unit, propulsion integration, sampled-thrust convergence, FPS/reset, and timeline/Inspector tests are also run separately.
 
 ## Interpretation limits
 
-The evidence establishes correctness for the documented still-air, constant-property, isotropic point-mass drag approximation and its numerical contract. It does not establish real-world aerodynamic accuracy. Landing values remain timestep-sensitive. Real-flight comparison requires measured vehicle data, calibration kept separate from evaluation, and explicit uncertainty analysis.
+The evidence establishes correctness for the documented synthetic piecewise-linear propulsion representation and still-air, constant-property, isotropic point-mass drag approximation. Exact curve impulse does not make position, drag impulse, apogee, or impact exact. Ground admission and landing remain timestep-sensitive discrete-event approximations. The default curve is not measured motor data. Real-flight comparison requires measured vehicle/motor data, calibration kept separate from evaluation, and explicit uncertainty analysis.
