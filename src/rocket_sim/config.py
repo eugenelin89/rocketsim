@@ -41,13 +41,16 @@ def _require_finite(name: str, value: float) -> None:
 
 @dataclass(frozen=True, slots=True)
 class SimulationConfig:
-    """Physical parameters for one deterministic Milestone 1 run."""
+    """Physical parameters for one deterministic Milestone 2 run."""
 
     mass_kg: float = 1.0
     thrust_n: float = 20.0
     burn_time_s: float = 1.0
     launch_angle_rad: float = math.pi / 2.0
     gravity_m_s2: float = 9.81
+    air_density_kg_m3: float = 1.225
+    drag_coefficient: float = 0.75
+    reference_area_m2: float = 0.01
     physics_dt_s: float = 0.01
     initial_position_m: Vector2 = field(default_factory=lambda: Vector2(0.0, 0.0))
     initial_velocity_m_s: Vector2 = field(default_factory=lambda: Vector2(0.0, 0.0))
@@ -59,6 +62,9 @@ class SimulationConfig:
             "burn_time_s": self.burn_time_s,
             "launch_angle_rad": self.launch_angle_rad,
             "gravity_m_s2": self.gravity_m_s2,
+            "air_density_kg_m3": self.air_density_kg_m3,
+            "drag_coefficient": self.drag_coefficient,
+            "reference_area_m2": self.reference_area_m2,
             "physics_dt_s": self.physics_dt_s,
         }
         for name, value in scalar_values.items():
@@ -74,5 +80,11 @@ class SimulationConfig:
             raise ValueError("burn_time_s must be non-negative")
         if self.gravity_m_s2 < 0.0:
             raise ValueError("gravity_m_s2 must be non-negative")
+        if self.air_density_kg_m3 < 0.0:
+            raise ValueError("air_density_kg_m3 must be non-negative")
+        if self.drag_coefficient < 0.0:
+            raise ValueError("drag_coefficient must be non-negative")
+        if self.reference_area_m2 < 0.0:
+            raise ValueError("reference_area_m2 must be non-negative")
         if self.initial_position_m.y < 0.0:
             raise ValueError("initial altitude must be at or above ground")

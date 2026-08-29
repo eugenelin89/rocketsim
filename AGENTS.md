@@ -37,6 +37,10 @@ Invoke for changes involving numerical integration, timestep handling, interpola
 
 Invoke before completing any milestone that changes simulation behavior.
 
+### `aerodynamics_reviewer`
+
+Invoke for changes involving drag, aerodynamic force, air-relative velocity, reference area, drag coefficient, air density, or later aerodynamic models when those domains become active.
+
 ### Write Authority
 
 Specialist reviewers are read-only unless a future approved prompt explicitly changes that rule. The parent Codex agent owns implementation, integration, and final decisions. Do not allow multiple agents to modify overlapping implementation files concurrently.

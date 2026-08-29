@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rocket_sim import SimulationConfig
+from rocket_sim import SimulationConfig, Vector2
 from rocket_sim.physics import acceleration_m_s2, gravity_force_n, thrust_force_n
 
 
@@ -42,7 +42,7 @@ def test_net_acceleration_is_force_sum_divided_by_mass() -> None:
         gravity_m_s2=9.81,
     )
 
-    acceleration = acceleration_m_s2(config, 0.25)
+    acceleration = acceleration_m_s2(config, 0.25, Vector2(0.0, 0.0))
 
     assert acceleration.x == pytest.approx(5.0, abs=1e-12)
     assert acceleration.y == pytest.approx(-9.81, abs=1e-12)

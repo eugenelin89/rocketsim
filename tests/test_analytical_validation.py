@@ -18,6 +18,7 @@ def test_gravity_only_matches_independent_projectile_reference() -> None:
         thrust_n=0.0,
         burn_time_s=0.0,
         gravity_m_s2=9.81,
+        air_density_kg_m3=0.0,
         physics_dt_s=dt,
         initial_position_m=Vector2(2.0, 100.0),
         initial_velocity_m_s=Vector2(3.0, 4.0),
@@ -51,6 +52,7 @@ def test_powered_motion_matches_independent_constant_acceleration_reference() ->
         burn_time_s=2.0,
         launch_angle_rad=angle,
         gravity_m_s2=gravity,
+        air_density_kg_m3=0.0,
         physics_dt_s=dt,
         initial_position_m=Vector2(0.0, 10.0),
         initial_velocity_m_s=Vector2(1.0, 2.0),
@@ -77,7 +79,7 @@ def test_powered_motion_matches_independent_constant_acceleration_reference() ->
 
 def test_piecewise_powered_and_coast_motion_matches_closed_form_error() -> None:
     dt = 0.01
-    config = SimulationConfig(physics_dt_s=dt)
+    config = SimulationConfig(physics_dt_s=dt, air_density_kg_m3=0.0)
     simulation = Simulation(config)
     _run_steps(simulation, 150)
 
@@ -120,6 +122,7 @@ def test_zero_gravity_powered_then_coast_limit() -> None:
         burn_time_s=0.5,
         launch_angle_rad=0.0,
         gravity_m_s2=0.0,
+        air_density_kg_m3=0.0,
         physics_dt_s=0.01,
         initial_position_m=Vector2(0.0, 1.0),
     )
@@ -136,6 +139,7 @@ def test_zero_force_preserves_uniform_motion() -> None:
         thrust_n=0.0,
         burn_time_s=0.0,
         gravity_m_s2=0.0,
+        air_density_kg_m3=0.0,
         physics_dt_s=0.01,
         initial_position_m=Vector2(1.0, 10.0),
         initial_velocity_m_s=Vector2(2.0, 3.0),

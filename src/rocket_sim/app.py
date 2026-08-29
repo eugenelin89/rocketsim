@@ -8,11 +8,13 @@ from .rendering import Renderer
 from .simulation import Simulation
 
 
-WINDOW_SIZE = (900, 700)
+WINDOW_SIZE = (1200, 720)
 DISPLAY_FPS = 60
 
 
-def handle_keydown(key: int, simulation: Simulation) -> bool:
+def handle_keydown(
+    key: int, simulation: Simulation, renderer: Renderer | None = None
+) -> bool:
     """Apply one key command and return whether the app should continue."""
 
     if key == pygame.K_ESCAPE:
@@ -21,6 +23,12 @@ def handle_keydown(key: int, simulation: Simulation) -> bool:
         simulation.toggle_pause()
     elif key == pygame.K_r:
         simulation.reset()
+    elif key == pygame.K_RIGHT:
+        simulation.single_step_paused()
+    elif key == pygame.K_f and renderer is not None:
+        renderer.toggle_force_vectors()
+    elif key == pygame.K_i and renderer is not None:
+        renderer.toggle_inspector()
     return True
 
 
@@ -33,7 +41,7 @@ def run(max_frames: int | None = None) -> int:
     pygame.init()
     try:
         surface = pygame.display.set_mode(WINDOW_SIZE)
-        pygame.display.set_caption("RocketSim — constant-thrust Milestone 1")
+        pygame.display.set_caption("RocketSim - quadratic-drag Physics Inspector")
         clock = pygame.time.Clock()
         simulation = Simulation()
         renderer = Renderer(*WINDOW_SIZE)
@@ -46,7 +54,7 @@ def run(max_frames: int | None = None) -> int:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    running = handle_keydown(event.key, simulation)
+                    running = handle_keydown(event.key, simulation, renderer)
 
             simulation.advance_elapsed(elapsed_s)
             renderer.draw(surface, simulation)

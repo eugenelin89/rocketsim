@@ -47,9 +47,32 @@ Validation:
 
 ## Milestone 2 — Aerodynamic drag
 
-Status: not started. It is outside Prompt 02.
+Status: complete in Prompt 03.
 
-When separately approved, this milestone may add quadratic drag with explicit density, drag coefficient, reference area, and air-relative velocity. It will require direction, zero-speed, `v²` scaling, analytical/limiting-case, and timestep-sensitivity evidence. No drag placeholder exists in the current implementation.
+Physics:
+
+- still-air quadratic drag
+- constant density, drag coefficient, and effective reference area
+- exact zero-speed and zero-parameter limiting behavior
+- shared thrust/gravity/drag/net force breakdown
+- drag applied during powered flight, coast ascent, and descent
+
+Features:
+
+- Physics Inspector with SI state, forces, parameters, and equations
+- same-scale thrust, gravity, drag, and net-force arrows
+- powered/coast trajectory distinction
+- force and Inspector visibility toggles
+- exact paused single-step through the normal physics path
+
+Validation:
+
+- independent force magnitude, direction, quadrant, reversal, and `v^2` cases
+- vertical quadratic-drag analytical fall and terminal velocity
+- first-order timestep convergence at `0.02`, `0.01`, and `0.005 s`
+- exact Prompt 02 reduction when density, `Cd`, or area is zero
+- active-drag burnout, reset, and FPS-independence regressions
+- renderer sourcing and non-mutation evidence
 
 ## Later candidate milestones
 

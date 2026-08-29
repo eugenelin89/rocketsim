@@ -1,95 +1,144 @@
 # Validation and Testing
 
-## Current evidence standard
+## Evidence standard
 
-RocketSim validates simple cases against independently calculated known answers before relying on integrated flight behavior. Expected analytical values in tests are computed directly from literal parameters and closed-form equations, not by calling production force, phase, or integration helpers.
+RocketSim validates simple cases against independently calculated answers before relying on integrated flight behavior. Expected force values and analytical trajectories in tests are calculated directly from literal parameters and equations, not by calling the production drag or force-breakdown helpers. A finer production run is not used as the sole nonlinear oracle.
 
-The suite runs headlessly with:
+The complete suite runs headlessly with:
 
 ```bash
 conda run -n rocketsim python -m pytest
 ```
 
-## Implemented checks
+## Prompt 02 regression baseline
 
-### Configuration and force algebra
+Prompt 02 gravity/thrust tests explicitly set air density to zero when their references assume constant acceleration. They retain force signs, the half-open burn predicate, semi-implicit update ordering, exact non-aligned burnout split, constant-mass behavior, analytical gravity/powered/piecewise motion, the known constant-acceleration position-error identity, ground interpolation, reset, strict accumulator semantics, and display-FPS independence.
 
-- finite input enforcement
-- positive mass and timestep
-- non-negative thrust, burn duration, and gravity
-- valid zero-valued limiting cases
-- gravitational sign and magnitude
-- thrust components at 0, 90, and 180 degrees
-- net acceleration from force divided by mass
-- thrust immediately before, exactly at, and immediately after burnout
-- negative time producing no thrust
-- constant mass throughout a complete run
+An additional integrated analytical case independently verifies that each of `rho = 0`, `Cd = 0`, and `A = 0` produces the same literal Prompt 02 result. There is no separate no-drag implementation.
 
-Direct identities use approximately `1e-12` absolute tolerance where floating-point trigonometry is involved.
+## Aerodynamic configuration and force algebra
 
-### Integration and event boundaries
+The suite verifies:
 
-- one-step ordering that distinguishes semi-implicit from explicit Euler
-- a deliberately non-grid-aligned fixed step that crosses burnout
-- exact powered impulse and coast remainder in the crossing step
-- coast phase and instantaneous coast acceleration at the resulting boundary
-- no false landing at launch
-- deterministic interpolated ground crossing and terminal immutability
-- deterministic no-liftoff behavior for an unsupported ground configuration
-- no negative-altitude history for a downward or under-resolved ground start
-- consistent thrust and acceleration telemetry for an impact before burnout
+- finite, non-negative density, `Cd`, and area with exact zero accepted;
+- negative, NaN, and infinite aerodynamic inputs rejected;
+- exactly zero drag at zero velocity;
+- exactly zero drag when density, `Cd`, or area is zero;
+- cardinal and all four diagonal velocity quadrants;
+- drag reversal when velocity reverses;
+- strict negative `F_drag dot v` for positive parameters and nonzero speed;
+- fourfold magnitude when speed doubles;
+- scalar magnitude `0.5 rho Cd A speed^2`; and
+- a literal combined thrust/gravity/drag/net-force and acceleration oracle.
 
-### Independent analytical motion
+For the independent vector oracle `rho=2`, `Cd=0.5`, `A=0.25`, and `v=(3,4) m/s`, the expected drag is `(-1.875,-2.5) N` with magnitude `3.125 N`. With `m=2 kg`, `g=3 m/s^2`, and `10 N` thrust along +x, the expected net force is `(8.125,-8.5) N` and acceleration is `(4.0625,-4.25) m/s^2`.
 
-The continuous references are:
+## Drag integration and events
+
+An exact one-step literal case distinguishes the documented numerical ordering:
 
 ```text
-v(t) = v0 + a t
-p(t) = p0 + v0 t + 0.5 a t²
+evaluate drag from v0 = (3,4) m/s
+update velocity to (3.40625,3.575) m/s
+update position to (1.340625,10.3575) m
 ```
 
-They are applied independently to gravity-only, powered constant-acceleration, and piecewise powered/coast cases. Velocity is expected to agree to roundoff during constant-acceleration intervals. Position expectations include the known semi-implicit Euler error:
+That test then independently recalculates drag, net force, and acceleration from the resulting velocity, proving ordinary recorded-state telemetry is not stale from the segment start.
+
+A deliberately non-aligned active-drag step crosses burnout at `0.5 s` within `dt=1.0 s`. Its powered substep reaches `vx=2.75 m/s`; the coast substep recomputes drag as `-3.78125 N` from that burnout velocity and ends at `vx=0.859375 m/s`, `x=1.8046875 m`. The test also requires exactly one burnout sample.
+
+Impact telemetry is independently checked to ensure drag and acceleration are recalculated from the interpolated impact velocity. Ground handling remains interpolation of the discrete numerical segment and is not presented as an exact root solve.
+
+## Analytical vertical quadratic-drag fall
+
+The nonlinear reference uses:
 
 ```text
-p_numerical - p_analytical = 0.5 a t dt
+m = 2 kg
+g = 8 m/s^2
+rho = 2 kg/m^3
+Cd = 1
+A = 1 m^2
+k = 1 kg/m
+v_terminal = 4 m/s
+y0 = 100 m
+vy0 = 0
 ```
 
-The suite also checks vertical horizontal displacement, zero thrust, zero gravity, and uniform zero-force motion.
-
-### Convergence
-
-An analytically referenced powered case runs with:
+At `t=1 s`, the independent continuous solution is:
 
 ```text
-dt = 0.02 s
-dt = 0.01 s
-dt = 0.005 s
+vy = -4 tanh(2)
+y = 100 - 2 ln(cosh(2))
 ```
 
-Position error must decrease monotonically and the error ratio must remain close to two, which is evidence of first-order convergence. A finer run from the same production integrator is not used as the sole correctness oracle.
+The high starting altitude prevents ground contact. At `dt=0.005 s`, the numerical state is `vy=-3.8598482081 m/s`, `y=97.3355269070 m`; the analytical state is `vy=-3.8561103203 m/s`, `y=97.3499945053 m`.
 
-The default vertical flight also compares interpolated landing time at those three timesteps with the independently solved positive root of the piecewise powered/coast trajectory. Landing-time error must decrease and approximately halve with timestep.
+## Measured timestep convergence
 
-### Lifecycle and time separation
+The analytical fall produced these absolute errors:
 
-- full flight leaves the ground and later terminates while descending
-- reset restores state, history, flags, counter, and fractional accumulator
-- replaying the same elapsed-time sequence after reset gives exactly the same history
-- paused wall time does not accumulate
-- pre-launch wall time does not accumulate and pause can resume with retained fractional time
-- zero elapsed time at a very small valid timestep cannot fabricate a physics step
-- a representably subthreshold elapsed interval cannot fabricate a physics step
-- equal `0.5 s` elapsed durations partitioned at 30, 60, and 144 FPS produce the same 50 fixed physics steps and identical trajectory
+| `dt` (s) | `|velocity error|` (m/s) | `|altitude error|` (m) |
+| ---: | ---: | ---: |
+| 0.020 | 0.0148671763 | 0.0578690164 |
+| 0.010 | 0.0074621397 | 0.0289350701 |
+| 0.005 | 0.0037378878 | 0.0144675983 |
 
-FPS validation feeds frame durations through the public accumulator rather than bypassing it with direct physics calls.
+Velocity error ratios as timestep halves are approximately `1.992` and `1.996`; altitude ratios are approximately `2.000` and `2.000`. This measured evidence is consistent with the expected first-order global behavior. It is not a claim of exact constant-acceleration error under active drag.
 
-### Rendering and application
+## Terminal velocity
 
-- physics modules have no Pygame import
-- world-to-screen conversion reverses only the vertical axis
-- drawing does not mutate physics state or trajectory
-- keyboard controls exercise launch/pause, reset, and exit
-- a dummy SDL display runs the application for a bounded number of frames and exits normally
+With the same analytical parameters, tests calculate the expected forces independently:
+
+- at `vy=-4 m/s`, drag is `+16 N`, weight is `-16 N`, and acceleration is zero;
+- at `vy=-3 m/s`, net vertical force is `-7 N` and acceleration is downward; and
+- at `vy=-5 m/s`, net vertical force is `+9 N` and acceleration is upward.
+
+No terminal-speed clamp exists.
+
+## Integrated lifecycle and time separation
+
+The suite verifies:
+
+- physically coherent drag signs during powered ascent, coast ascent, and descent;
+- lower default-flight apogee with drag than in the zero-drag limit;
+- constant mass throughout active-drag flight;
+- deterministic reset/rerun with velocity-dependent feedback;
+- equal state and trajectory for active-drag elapsed time partitioned at 30, 60, and 144 FPS, including an exact burnout boundary;
+- paused RIGHT-arrow stepping advances one configured outer step, preserves fractional accumulator residue, remains paused, and retains burnout splitting; and
+- RIGHT is inactive before launch, while running, and after landing.
+
+The default `dt=0.01 s` flight is numerically stable for the documented educational constants. The integrator remains explicit with respect to drag and is not claimed stable for arbitrary finite parameters or timesteps.
+
+## Rendering and application
+
+Automated evidence covers:
+
+- no Pygame dependency in configuration, physics, or simulation modules;
+- world and force-vector y-axis inversion only at rendering;
+- one shared display scale for thrust, gravity, drag, and net force;
+- four sentinel production force vectors reaching all four arrow endpoint calculations at that same scale;
+- Inspector presence of state, all force values, aerodynamic parameters, and implemented equations;
+- distinct Inspector labels for post-liftoff impact and terminal no-liftoff initial states;
+- the renderer reading `Simulation.current_forces` while containing no drag helper or drag equation implementation;
+- rendering with overlays enabled and disabled without mutating state, history, accumulator, or configuration;
+- F and I toggles changing presentation only;
+- SPACE, RIGHT, R, and ESC behavior; and
+- a bounded SDL dummy-display application run.
+
+The real SDL application launched successfully and remained live until intentionally interrupted. The available desktop-control layer could not attach to the unbundled Python window, so physical keyboard manipulation is not claimed. Separately rendered production frames were visually inspected at powered ascent, coast ascent, descent, and paused-after-single-step states. Arrow directions and numerical labels agreed with the force breakdowns; an initial label-overlap defect was corrected with small rendering-only lateral arrow origins while preserving direction and the common scale. Automated key-event tests cover SPACE, RIGHT, R, F, I, and ESC, and a scripted production-path paused step confirmed one `0.01 s` advance while remaining paused.
+
+Visual inspection supplements these automated checks but is not the scientific oracle.
+
+## Current Prompt 03 suite result
+
+After specialist review corrections, the complete suite reports:
+
+```text
+119 passed
+```
+
+Focused aerodynamic, analytical, convergence, integration, lifecycle, timing, and rendering groups also pass independently, as does the bounded SDL dummy application smoke test.
 
 ## Full validation procedure
 
@@ -106,6 +155,8 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy conda run -n rocketsim python -c "fr
 git diff --check
 ```
 
+Focused aerodynamic, analytical, convergence, integration, lifecycle, accumulator, and rendering tests are also run separately.
+
 ## Interpretation limits
 
-Landing interpolation follows the discrete numerical segment; it is not an exact impact root. Event time, apogee, and landing metrics remain timestep-sensitive. The suite establishes correctness for the documented simplified equations and numerical contract, not agreement with real rockets. Real-flight comparison requires later calibration, uncertainty analysis, and measured data kept separate from evaluation data.
+The evidence establishes correctness for the documented still-air, constant-property, isotropic point-mass drag approximation and its numerical contract. It does not establish real-world aerodynamic accuracy. Landing values remain timestep-sensitive. Real-flight comparison requires measured vehicle data, calibration kept separate from evaluation, and explicit uncertainty analysis.

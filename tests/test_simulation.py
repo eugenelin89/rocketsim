@@ -34,6 +34,7 @@ def test_ground_crossing_is_linearly_interpolated_on_discrete_segment() -> None:
             thrust_n=0.0,
             burn_time_s=0.0,
             gravity_m_s2=0.0,
+            air_density_kg_m3=0.0,
             physics_dt_s=0.2,
             initial_position_m=Vector2(2.0, 0.1),
             initial_velocity_m_s=Vector2(4.0, -1.0),
@@ -55,6 +56,7 @@ def test_accelerated_ground_crossing_interpolates_impact_velocity() -> None:
             thrust_n=0.0,
             burn_time_s=0.0,
             gravity_m_s2=2.0,
+            air_density_kg_m3=0.0,
             physics_dt_s=0.2,
             initial_position_m=Vector2(2.0, 0.1),
             initial_velocity_m_s=Vector2(4.0, -1.0),
@@ -122,6 +124,7 @@ def test_pre_burn_impact_telemetry_keeps_thrust_and_acceleration_consistent() ->
             burn_time_s=1.0,
             launch_angle_rad=0.0,
             gravity_m_s2=0.0,
+            air_density_kg_m3=0.0,
             physics_dt_s=0.2,
             initial_position_m=Vector2(0.0, 0.1),
             initial_velocity_m_s=Vector2(0.0, -1.0),
@@ -135,6 +138,51 @@ def test_pre_burn_impact_telemetry_keeps_thrust_and_acceleration_consistent() ->
     assert simulation.state.time_s < 1.0
     assert simulation.current_thrust_n == 1.0
     assert simulation.state.acceleration_m_s2 == Vector2(1.0, 0.0)
+
+
+def test_drag_telemetry_uses_interpolated_impact_velocity() -> None:
+    simulation = Simulation(
+        SimulationConfig(
+            mass_kg=1.0,
+            thrust_n=1.0,
+            burn_time_s=1.0,
+            launch_angle_rad=0.0,
+            gravity_m_s2=0.0,
+            air_density_kg_m3=2.0,
+            drag_coefficient=1.0,
+            reference_area_m2=1.0,
+            physics_dt_s=0.2,
+            initial_position_m=Vector2(0.0, 0.1),
+            initial_velocity_m_s=Vector2(0.0, -1.0),
+        )
+    )
+    simulation.launch()
+
+    assert simulation.step()
+
+    expected_velocity = Vector2(0.125, -0.875)
+    expected_speed = math.sqrt(0.125**2 + 0.875**2)
+    expected_drag = Vector2(
+        -expected_speed * 0.125,
+        expected_speed * 0.875,
+    )
+    assert simulation.state.time_s == pytest.approx(0.125, abs=1e-12)
+    assert simulation.state.velocity_m_s.x == pytest.approx(
+        expected_velocity.x, abs=1e-12
+    )
+    assert simulation.state.velocity_m_s.y == pytest.approx(
+        expected_velocity.y, abs=1e-12
+    )
+    assert simulation.current_forces.drag_n.x == pytest.approx(
+        expected_drag.x, abs=1e-12
+    )
+    assert simulation.current_forces.drag_n.y == pytest.approx(
+        expected_drag.y, abs=1e-12
+    )
+    assert simulation.state.acceleration_m_s2 == Vector2(
+        1.0 + expected_drag.x,
+        expected_drag.y,
+    )
 
 
 def test_reset_reproduces_state_history_and_clears_fractional_accumulator() -> None:
@@ -206,3 +254,64 @@ def test_pre_launch_wall_time_is_ignored_and_pause_can_resume() -> None:
 
     assert simulation.physics_step_count == 2
     assert retained_accumulator == pytest.approx(0.005, abs=1e-15)
+
+
+def test_paused_single_step_uses_production_path_and_preserves_accumulator() -> None:
+    paused = Simulation()
+    running = Simulation()
+    for simulation in (paused, running):
+        simulation.launch()
+        simulation.advance_elapsed(0.015)
+
+    paused.toggle_pause()
+    before_time_s = paused.state.time_s
+    before_steps = paused.physics_step_count
+    before_accumulator_s = paused.accumulator_s
+
+    assert paused.single_step_paused()
+    assert running.step()
+
+    assert paused.is_paused
+    assert paused.state.time_s == pytest.approx(
+        before_time_s + paused.config.physics_dt_s, abs=1e-15
+    )
+    assert paused.physics_step_count == before_steps + 1
+    assert paused.accumulator_s == before_accumulator_s
+    assert paused.state == running.state
+    assert paused.trajectory == running.trajectory
+
+
+def test_paused_single_step_preserves_burnout_split() -> None:
+    simulation = Simulation(
+        SimulationConfig(
+            burn_time_s=0.015,
+            physics_dt_s=0.01,
+            air_density_kg_m3=1.225,
+        )
+    )
+    simulation.launch()
+    assert simulation.step()
+    simulation.toggle_pause()
+
+    assert simulation.single_step_paused()
+
+    assert simulation.is_paused
+    assert simulation.physics_step_count == 2
+    assert simulation.state.time_s == pytest.approx(0.02, abs=1e-15)
+    assert sum(sample.time_s == 0.015 for sample in simulation.trajectory) == 1
+    assert simulation.state.phase is FlightPhase.COAST
+
+
+def test_paused_single_step_is_inactive_when_not_paused_live_flight() -> None:
+    ready = Simulation()
+    assert not ready.single_step_paused()
+
+    ready.launch()
+    assert not ready.single_step_paused()
+
+    landed = Simulation(
+        SimulationConfig(thrust_n=0.0, burn_time_s=0.0)
+    )
+    landed.launch()
+    assert landed.is_finished
+    assert not landed.single_step_paused()

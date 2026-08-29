@@ -7,7 +7,12 @@ from enum import Enum
 import math
 
 from .config import SimulationConfig, Vector2
-from .physics import acceleration_m_s2, semi_implicit_euler
+from .physics import (
+    ForceBreakdown,
+    acceleration_m_s2,
+    force_breakdown_n,
+    semi_implicit_euler,
+)
 
 
 class FlightPhase(str, Enum):
@@ -73,11 +78,19 @@ class Simulation:
 
     @property
     def current_thrust_n(self) -> float:
+        return self.current_forces.thrust_n.magnitude
+
+    @property
+    def current_forces(self) -> ForceBreakdown:
+        """Return forces at the current state, inactive while still ready."""
+
         if self._state.phase is FlightPhase.READY:
-            return 0.0
-        if 0.0 <= self._state.time_s < self.config.burn_time_s:
-            return self.config.thrust_n
-        return 0.0
+            return ForceBreakdown.zero()
+        return force_breakdown_n(
+            self.config,
+            self._state.time_s,
+            self._state.velocity_m_s,
+        )
 
     def _initial_state(self) -> RocketState:
         return RocketState(
@@ -96,7 +109,9 @@ class Simulation:
         if self._state.phase is not FlightPhase.READY:
             return
 
-        initial_acceleration = acceleration_m_s2(self.config, 0.0)
+        initial_acceleration = acceleration_m_s2(
+            self.config, 0.0, self._state.velocity_m_s
+        )
         can_leave_ground = self._state.position_m.y > 0.0
         if self._state.position_m.y == 0.0 and self._state.velocity_m_s.y >= 0.0:
             first_segment_s = self.config.physics_dt_s
@@ -164,8 +179,7 @@ class Simulation:
         steps = 0
         dt = self.config.physics_dt_s
         while self.accumulator_s >= dt and self._is_running:
-            self._advance_fixed_step(dt)
-            self._physics_step_count += 1
+            self._take_fixed_step()
             steps += 1
             self._add_accumulator(-dt)
 
@@ -190,9 +204,20 @@ class Simulation:
 
         if not self._is_running or self.is_finished:
             return False
+        self._take_fixed_step()
+        return True
+
+    def single_step_paused(self) -> bool:
+        """Advance one production fixed step during a live paused flight."""
+
+        if not self.is_paused:
+            return False
+        self._take_fixed_step()
+        return True
+
+    def _take_fixed_step(self) -> None:
         self._advance_fixed_step(self.config.physics_dt_s)
         self._physics_step_count += 1
-        return True
 
     def _phase_at(self, time_s: float) -> FlightPhase:
         if 0.0 <= time_s < self.config.burn_time_s:
@@ -214,7 +239,9 @@ class Simulation:
     def _advance_segment_to(self, target_time_s: float) -> None:
         previous = self._state
         duration_s = target_time_s - previous.time_s
-        acceleration = acceleration_m_s2(self.config, previous.time_s)
+        acceleration = acceleration_m_s2(
+            self.config, previous.time_s, previous.velocity_m_s
+        )
         trial_position, trial_velocity = semi_implicit_euler(
             previous.position_m,
             previous.velocity_m_s,
@@ -245,7 +272,9 @@ class Simulation:
                 time_s=impact_time_s,
                 position_m=impact_position,
                 velocity_m_s=impact_velocity,
-                acceleration_m_s2=acceleration_m_s2(self.config, impact_time_s),
+                acceleration_m_s2=acceleration_m_s2(
+                    self.config, impact_time_s, impact_velocity
+                ),
                 mass_kg=self.config.mass_kg,
                 phase=FlightPhase.LANDED,
                 has_lifted_off=True,
@@ -261,7 +290,7 @@ class Simulation:
                 position_m=Vector2(previous.position_m.x, 0.0),
                 velocity_m_s=previous.velocity_m_s,
                 acceleration_m_s2=acceleration_m_s2(
-                    self.config, previous.time_s
+                    self.config, previous.time_s, previous.velocity_m_s
                 ),
                 mass_kg=self.config.mass_kg,
                 phase=FlightPhase.LANDED,
@@ -276,7 +305,9 @@ class Simulation:
             time_s=target_time_s,
             position_m=trial_position,
             velocity_m_s=trial_velocity,
-            acceleration_m_s2=acceleration_m_s2(self.config, target_time_s),
+            acceleration_m_s2=acceleration_m_s2(
+                self.config, target_time_s, trial_velocity
+            ),
             mass_kg=self.config.mass_kg,
             phase=self._phase_at(target_time_s),
             has_lifted_off=lifted_off,
