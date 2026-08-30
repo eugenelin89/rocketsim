@@ -108,6 +108,40 @@ Validation:
 
 The default is a synthetic educational curve, not measured motor data. Variable mass and propellant depletion remain unimplemented.
 
+## Milestone 4 — Interactive pre-launch laboratory
+
+Status: complete in Prompt 05.
+
+Physics:
+
+- no new force, equation, numerical method, event rule, or propulsion behavior
+- learner-selected mass, fixed world thrust direction, `Cd`, reference area, constant density, and constant gravity between runs
+- immutable configuration and constant values throughout each run
+- unchanged sampled motor, impulse, drag, ground, accumulator, and paused-step semantics
+
+Features:
+
+- Pygame-native READY setup panel with deterministic `-`/`+` controls
+- one shared typed-action path for keyboard and mouse Launch/Pause/Resume
+- mouse Reset Flight preserving selected setup and READY-only Restore Defaults
+- visible configuration lockout during running, paused, coast, and landed states
+- exact fixed-thrust-direction preview labeled as not rotational attitude
+- Inspector display of direction, gravity, and the selected constant setup
+- Living Course Lesson 10 on controlled experiments with mass, drag coefficient, and launch direction
+- context-efficient core/focused/not-required specialist review policy and Git-native prompt provenance
+
+Validation:
+
+- literal mapping of all 12 adjustment hitboxes to the intended config fields
+- atomic READY-state rebuild and complete non-READY replacement rejection
+- direct setup-to-production acceleration, thrust-vector, gravity, and drag wiring
+- exact motor/timestep/unexposed-field preservation and exact default restoration
+- mouse/keyboard common-dispatch and reset-equivalence evidence
+- bounds, off-grid-default reversibility, lockout, display sourcing, preview geometry, and renderer non-mutation
+- selected-configuration deterministic reset/rerun plus the complete Prompt 04 regression suite
+
+The educational bounds deliberately include valid no-liftoff and limiting cases. They are interface choices rather than restrictions on `SimulationConfig` or claims about nature. No automatic run comparison, history, plotting, export, or Prompt 06 physics is included.
+
 ## Standing cross-cutting requirement — Learning Course impact review
 
 Every future approved milestone must identify whether it changes physics, equations, numerical interpretation, phases/events, Inspector information, educational visualization, controls, or experiments. Applicable chapters of `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` must be revised and the complete course reviewed before that milestone is complete. This requirement may revise earlier chapters rather than merely append a new one.

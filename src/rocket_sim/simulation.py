@@ -40,13 +40,34 @@ class Simulation:
     """Own a single constant-mass rocket flight and its recorded trajectory."""
 
     def __init__(self, config: SimulationConfig | None = None) -> None:
-        self.config = config or SimulationConfig()
+        self._config = config or SimulationConfig()
+        self._reset_run_state()
+
+    @property
+    def config(self) -> SimulationConfig:
+        """Return the immutable configuration owned by this simulation run."""
+
+        return self._config
+
+    def _reset_run_state(self) -> None:
         self._state = self._initial_state()
         self._trajectory: list[RocketState] = [self._state]
         self._accumulator_s = 0.0
         self._accumulator_compensation_s = 0.0
         self._is_running = False
         self._physics_step_count = 0
+
+    def replace_ready_config(self, config: SimulationConfig) -> bool:
+        """Atomically replace setup and rebuild state only while READY."""
+
+        if not isinstance(config, SimulationConfig):
+            raise TypeError("config must be a SimulationConfig")
+        if self._state.phase is not FlightPhase.READY:
+            return False
+
+        self._config = config
+        self._reset_run_state()
+        return True
 
     @property
     def state(self) -> RocketState:
@@ -175,14 +196,9 @@ class Simulation:
             self._is_running = not self._is_running
 
     def reset(self) -> None:
-        """Restore all state, trajectory, timing, and lifecycle flags."""
+        """Restore run state while preserving the selected configuration."""
 
-        self._state = self._initial_state()
-        self._trajectory = [self._state]
-        self._accumulator_s = 0.0
-        self._accumulator_compensation_s = 0.0
-        self._is_running = False
-        self._physics_step_count = 0
+        self._reset_run_state()
 
     def advance_elapsed(self, elapsed_s: float) -> int:
         """Consume wall time through fixed physics steps and return their count."""

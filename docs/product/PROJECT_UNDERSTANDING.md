@@ -2,7 +2,7 @@
 
 ## Purpose and current milestone
 
-RocketSim is a scientifically validated, interactive rocketry-learning simulator whose educational course evolves with the implemented model. It remains a trustworthy, understandable 2D learning model rather than an engineering-grade launch predictor. Prompt 04 adds piecewise-linear sampled thrust and motor impulse while establishing the permanent Living Rocketry Course.
+RocketSim is a scientifically validated, interactive rocketry-learning simulator whose educational course evolves with the implemented model. It remains a trustworthy, understandable 2D learning model rather than an engineering-grade launch predictor. Prompt 05 turns the existing validated parameters into a READY-only pre-launch laboratory and establishes a context-efficient specialist-review workflow; it adds no physical effect.
 
 ## Implemented model
 
@@ -16,21 +16,22 @@ The forces are:
 
 Air is stationary, so rocket velocity relative to air is numerically equal to ground-frame rocket velocity. Density, drag coefficient, and reference area are fixed for a complete run. The default educational constants are `rho = 1.225 kg/m^3`, `Cd = 0.75`, and `A = 0.01 m^2`; they are not calibration of a particular rocket. Setting any one of these scalars to zero recovers the validated Prompt 02 no-drag model through the same force path.
 
-One immutable `ThrustCurve` is the propulsion source of truth. Its final sample defines burn duration; its exact polyline area defines total and delivered impulse. The default curve is self-authored synthetic data with `1.05 s` duration, `17.58 N*s` total impulse, `28 N` peak thrust, and `16.742857... N` average thrust. It is not measured or certified motor data. The rocket mass and thrust direction remain constant.
+One immutable `ThrustCurve` is the propulsion source of truth. Its final sample defines burn duration; its exact polyline area defines total and delivered impulse. The default curve is self-authored synthetic data with `1.05 s` duration, `17.58 N*s` total impulse, `28 N` peak thrust, and `16.742857... N` average thrust. It is not measured or certified motor data. A learner may select mass and fixed thrust direction before a run; both remain constant throughout that run. The UI neither edits nor scales the motor.
 
 ## Implemented structure
 
 ```text
 src/rocket_sim/config.py       immutable Vector2 and validated run constants
+src/rocket_sim/setup.py        typed actions and educational config adjustments
 src/rocket_sim/propulsion.py   sampled curve, interpolation, and impulse metrics
 src/rocket_sim/physics.py      thrust, gravity, drag, force breakdown, and Euler segment
 src/rocket_sim/simulation.py   lifecycle, fixed outer clock, knot segments, and history
-src/rocket_sim/rendering.py    force arrows, Inspector, and motor timeline
-src/rocket_sim/app.py          Pygame loop and educational controls
+src/rocket_sim/rendering.py    setup geometry, force arrows, Inspector, and timeline
+src/rocket_sim/app.py          Pygame loop and shared keyboard/mouse action dispatch
 src/rocket_sim/__main__.py     python -m rocket_sim entry point
 ```
 
-The physics modules do not import Pygame. Rendering consumes `Simulation.current_forces`, the same immutable `ForceBreakdown` calculated by the production physics layer. Display scaling and visibility toggles cannot alter physical values or state.
+The physics and setup modules do not import Pygame. Rendering consumes `Simulation.current_forces`, the same immutable `ForceBreakdown` calculated by the production physics layer. Display scaling, hit-testing, and visibility toggles cannot alter physical values or state. `Simulation.config` is getter-only; whole-config replacement is accepted only in READY and atomically rebuilds the initial state and run bookkeeping.
 
 ## Numerical and event semantics
 
@@ -46,16 +47,16 @@ The physics modules do not import Pygame. Rendering consumes `Simulation.current
 
 ## Educational presentation
 
-The Pygame application shows powered and coast trajectory segments, current phase and burnout status, thrust/gravity/drag/net-force arrows, numerical force components and magnitudes, motor/aerodynamic parameters, and the implemented equations. A motor timeline plots production samples, current motor cursor, peak, and burnout. READY explicitly reports forces as inactive alongside zero stored acceleration; it does not invent a pad normal force.
+The Pygame application shows a pre-launch setup panel, powered and coast trajectory segments, current phase and burnout status, thrust/gravity/drag/net-force arrows, numerical force components and magnitudes, motor/selected parameters, and the implemented equations. A motor timeline plots production samples, current motor cursor, peak, and burnout. READY explicitly reports forces as inactive alongside zero stored acceleration; it does not invent a pad normal force.
 
-Controls are SPACE launch/pause/resume, RIGHT single-step while paused, R reset, F force overlay, I Physics Inspector, and ESC exit.
+The setup panel exposes mass, fixed thrust direction in degrees, `Cd`, effective reference area, constant air density, and constant gravity. Edits and Restore Defaults are READY-only. The sampled motor and timestep are read-only. The fixed-direction guide uses the configured radians and is explicitly not attitude. Keyboard and mouse use one typed-action dispatcher: SPACE or the primary button launches/pauses/resumes; R or Reset Flight rebuilds READY run state while preserving setup; Restore Defaults creates an exact production default config; RIGHT, F, I, and ESC retain their established behavior.
 
 ## Validation status
 
-The suite preserves Prompts 02–03 through constant/zero curves and adds independent sample validation, interpolation, impulse, default metrics, knot segmentation, burn-end, impulse–momentum, active-drag force, independent-RK4 convergence, sampled-thrust reset/FPS, paused stepping, rendering isolation, Inspector/timeline sourcing, and bounded SDL smoke evidence.
+The suite preserves Prompts 02–04 and adds literal UI-label-to-field wiring, complete READY-state rebuilding, non-READY lockout, reset/default distinction, motor/unexposed-field preservation, mouse/keyboard common dispatch, independent production-force oracles, bounds/reversibility, setup-display sourcing, angle-preview geometry, rendering non-mutation, selected-config deterministic rerun, and bounded SDL evidence.
 
 ## Current limits
 
-Density, `Cd`, and effective reference area are constant and direction-independent. There is no wind, altitude-varying atmosphere, lift, compressibility, Mach/Reynolds dependence, variable mass, propellant depletion, measured motor import, pad/rail contact, recovery, collision dynamics, rotation, stability, guidance, control, plotting, experiment export, calibration, or uncertainty model. Semi-implicit Euler is explicit with respect to drag and can become unstable for sufficiently large timestep or speed; no artificial clamp conceals that limitation.
+Each selected physical scalar is constant during one run. UI bounds are pedagogical controls, not physical limits. Some valid choices produce NO LIFTOFF in the no-pad/no-rail boundary model, and zero gravity can produce a flight that never returns. There is no wind, altitude-varying atmosphere, lift, compressibility, Mach/Reynolds dependence, variable mass, propellant depletion, measured motor import or editing, pad/rail contact, recovery, collision dynamics, rotation, stability, guidance, control, automatic run comparison, plotting, experiment export, calibration, or uncertainty model. Semi-implicit Euler is explicit with respect to drag and can become unstable for sufficiently large timestep or speed; no artificial clamp conceals that limitation.
 
-The point-mass result is not equivalent to 3D flight dynamics and is not an engineering or safety prediction. Prompt 05 has not begun.
+The point-mass result is not equivalent to 3D flight dynamics and is not an engineering or safety prediction. Prompt 06 has not begun.

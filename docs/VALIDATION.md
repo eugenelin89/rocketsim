@@ -224,7 +224,7 @@ After specialist review corrections, the complete suite reports:
 
 Prompt 03 completed with 119 passing tests. Prompt 04 preserves those contracts through constant and zero sampled-curve limiting cases.
 
-## Current Prompt 04 suite result
+## Prompt 04 baseline suite result
 
 After post-implementation specialist corrections, the complete implementation and documentation-development suite reports:
 
@@ -233,6 +233,56 @@ After post-implementation specialist corrections, the complete implementation an
 ```
 
 Focused propulsion, impulse, knot, active-drag, convergence, lifecycle, accumulator, rendering, and Living Course executable-contract groups pass independently.
+
+## Prompt 05 pre-launch laboratory evidence
+
+Prompt 05 adds no equation or integrator change. Its new risk is incorrect or mutable UI-to-configuration wiring, so validation crosses the actual setup, renderer-hitbox, application-event, simulation-ownership, and production-force seams rather than reimplementing the full physics suite in UI tests.
+
+The interface tests establish:
+
+- the default six displayed values equal an exact production `SimulationConfig()`;
+- all 12 visible `-`/`+` hitbox centers return the parameter and direction shown by their labels;
+- each dispatched hitbox action changes only its literal intended field, while exact motor identity, timestep, initial conditions, and every other field remain unchanged;
+- off-grid defaults `rho=1.225` and `g=9.81` step relative to their current values, remain bounded, and return after a `+`/`-` pair without grid snap;
+- an accepted whole-config replacement while READY atomically rebuilds state mass, initial position/velocity, singleton trajectory, accumulator, step count, and lifecycle flags;
+- the getter-only active configuration rejects complete replacement without any public-state change while powered/running, paused, coast, or landed;
+- direct adjustment/Restore actions and renderer hit-testing are both locked outside READY, then unlock after Reset Flight;
+- Reset Flight preserves selected config object and motor identities, while Restore Defaults creates the complete exact production default including unexposed timestep, initial vectors, and motor;
+- actual Pygame key and mouse events reach the same typed-action dispatcher; primary transitions and Reset semantics agree across input devices; right-click and out-of-panel clicks are no-ops;
+- setup strings are generated from the current production config before edit, after edit, after reset, and after restore, with the documented units and precision;
+- the fixed-direction preview has an independent `30 deg` screen-endpoint oracle and the draw path passes the exact configured radians;
+- draw and hit-testing preserve config identity, state, trajectory, accumulator, step count, running/paused/finished flags; and
+- a nondefault selected config reproduces exactly after reset/rerun.
+
+Independent integration oracles prove the labeled parameters reach production physics: a `10 N`, zero-gravity case gives `a=T/m`; `30 deg` splits thrust into `(T sqrt(3)/2, T/2)`; gravity gives `(0,-mg)`; and distinct `rho`, `Cd`, and area edits are checked against a literal `v=(3,4)` quadratic-drag calculation. These tests complement rather than replace the lower-level independent force tests.
+
+The untouched GUI defaults and an explicit `SimulationConfig()` produce identical terminal state, complete trajectory, force telemetry, and step count, preserving the Prompt 04 default flight. The Lesson 10 production runs give:
+
+| experiment | run A | run B |
+| --- | --- | --- |
+| mass `1.0` vs `1.2 kg` | apogee `8.1031495 m`, landed `3.0579922 s` | apogee `4.6826747 m`, landed `2.4610537 s` |
+| `Cd=0.5` vs `1.0`, both `A=0.100 m^2` | apogee `7.1906235 m`, landed `2.9186619 s` | apogee `6.4418044 m`, landed `2.8010351 s` |
+| direction `90` vs `60 deg` | terminal `x` approximately zero | terminal `x=18.1176548 m` |
+
+Six production-rendered states were visually inspected in the existing `1200x720` layout: READY default, READY modified, running locked, paused locked, Reset Flight with selection preserved/unlocked, and Restore Defaults. The setup panel, read-only motor/impulse/timestep summary, timeline, direction preview, primary/reset/default actions, and Inspector remained readable without panel overlap. This supplements—rather than replaces—the event, geometry, data-sourcing, and non-mutation tests.
+
+The focused setup/lifecycle/rendering group reports:
+
+```text
+82 passed
+```
+
+The first complete Prompt 05 implementation suite before specialist post-review reports:
+
+```text
+209 passed
+```
+
+After targeted learning/test review corrections and selective resolution review, the final complete Prompt 05 suite reports:
+
+```text
+211 passed
+```
 
 ## Full validation procedure
 
@@ -251,6 +301,7 @@ git diff --check
 
 Focused aerodynamic, analytical, convergence, integration, lifecycle, accumulator, and rendering tests are also run separately.
 Focused propulsion unit, propulsion integration, sampled-thrust convergence, FPS/reset, and timeline/Inspector tests are also run separately.
+Focused Prompt 05 setup, simulation lifecycle, application-event, and rendering tests are run separately before the full regression suite.
 
 ## Interpretation limits
 

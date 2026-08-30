@@ -6,7 +6,7 @@ Start with the [Living Rocketry Course](docs/learning/LEARNING_ROCKETRY_WITH_ROC
 
 ## Current status
 
-Milestone 3 is implemented. The runnable application includes a Physics Inspector, force-vector overlay, and motor thrust timeline while a Pygame-independent physics core remains the sole owner of force calculations, integration, event transitions, and history.
+Milestone 4 is implemented. The runnable application is an interactive pre-launch laboratory with READY-only setup controls, mouse Launch/Pause/Resume and Reset actions, a Physics Inspector, force-vector overlay, and motor thrust timeline. A Pygame-independent physics core remains the sole owner of configuration, force calculations, integration, event transitions, and history.
 
 Implemented physics:
 
@@ -43,16 +43,21 @@ conda run -n rocketsim python -m pytest
 conda run -n rocketsim python -m rocket_sim
 ```
 
+The pre-launch panel edits mass, fixed thrust direction (shown in degrees), `Cd`, effective reference area, constant air density, and constant gravity. It rebuilds an immutable validated `SimulationConfig` only while READY. The configured sampled motor/impulse and `physics_dt_s` are shown read-only. Parameters are selected between runs and remain constant throughout each run.
+
 Controls:
 
-- `SPACE`: launch, pause, or resume
+- `SPACE` or the primary mouse button: launch, pause, or resume
 - `RIGHT ARROW`: advance exactly one physics timestep while paused
-- `R`: reset the complete deterministic run
+- `R` or **Reset Flight**: return to READY while preserving selected setup
+- **Restore Defaults**: while READY, restore an exact `SimulationConfig()`
 - `F`: show or hide force vectors
 - `I`: show or hide the Physics Inspector
 - `ESC`: exit
 
-The inspector shows flight and motor phase, burnout status, state, acceleration, constant mass, current/peak/average thrust, burn-time progress, delivered/total impulse, all force vectors and magnitudes, aerodynamic constants, and implemented equations. The timeline plots the exact production samples and current motor-time cursor; after burnout its endpoint-clamped cursor is labeled as such. Thrust, gravity, drag, and net-force arrows use the same rendering-only scale and are sourced from the force breakdown used by the simulator.
+Setup increments and ranges are educational interface choices: mass `0.1–10 kg` by `0.1`, direction `10–90 deg` by `5`, `Cd` `0–2` by `0.05`, area `0.001–0.100 m^2` by `0.001`, density `0–2 kg/m^3` by `0.05`, and gravity `0–20 m/s^2` by `0.25`. They do not constrain headless `SimulationConfig` use or claim those are nature's limits. Some combinations correctly produce NO LIFTOFF under the current no-pad/no-rail boundary model.
+
+The inspector shows flight and motor phase, burnout status, state, acceleration, constant mass, current/peak/average thrust, burn-time progress, delivered/total impulse, all force vectors and magnitudes, selected setup values, and implemented equations. The timeline plots the exact production samples and current motor-time cursor; after burnout its endpoint-clamped cursor is labeled as such. Thrust, gravity, drag, and net-force arrows use the same rendering-only scale and are sourced from the force breakdown used by the simulator. The READY direction guide shows fixed world thrust direction, not rotational attitude.
 
 The default vertical configuration uses a `1 kg` rocket and begins at `12 N`, above its `9.81 N` weight. The original zero-at-ignition educational curve is tested only away from the ground boundary because RocketSim does not model a launch-pad support force.
 
@@ -60,7 +65,7 @@ The default vertical configuration uses a `1 kg` rocket and begins at `12 N`, ab
 
 ```text
 .codex/agents/         persistent read-only specialist reviewer definitions
-src/rocket_sim/        configuration, physics, lifecycle, rendering, and app code
+src/rocket_sim/        setup, configuration, physics, lifecycle, rendering, and app code
 tests/                 headless physics, numerical, lifecycle, and rendering tests
 docs/learning/         learner-facing Living Rocketry Course
 docs/product/          current implementation understanding

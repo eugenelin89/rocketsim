@@ -13,10 +13,10 @@ RocketSim is not a certified launch predictor. Its value is that its assumptions
 Most activities follow this rhythm:
 
 ```text
-Predict → Observe → Explain
+Predict → Control → Launch → Observe → Explain
 ```
 
-Before running an activity, write down what you expect. During the run, record actual numbers and signs. Afterward, use forces and equations—not visual plausibility alone—to explain the result.
+Before running an activity, write down what you expect. Identify which setup value you will change and which values you will hold constant. During the run, record actual numbers and signs. Afterward, use forces and equations—not visual plausibility alone—to explain the result.
 
 Scientific truth for the implemented model lives in `docs/PHYSICS_MODEL.md`. Validation methods and quantitative evidence live in `docs/VALIDATION.md`. This course explains those sources for learners.
 
@@ -55,15 +55,19 @@ Before launch, READY deliberately displays inactive zero forces and zero stored 
 ### Controls
 
 ```text
-SPACE  launch; pause or resume a live flight
+SPACE  launch; pause or resume a live flight (same as the primary mouse button)
 RIGHT  advance one outer physics step only while a live flight is paused
-R      reset the complete deterministic run
+R      Reset Flight: return to READY and preserve the selected setup
 F      show or hide force vectors
 I      show or hide the Physics Inspector
 ESC    exit
 ```
 
-There is no parameter editor. `F` and `I` change presentation only. `RIGHT` does not act while READY, while running, or after landing.
+The PRE-LAUNCH LAB panel is active only in READY. Its `-` and `+` controls select mass, fixed thrust direction, `Cd`, reference area, constant air density, and constant gravity. The large mouse button performs the same Launch/Pause/Resume action as `SPACE`. **Reset Flight** clears flight state and trajectory but preserves those selected values. **Restore Defaults** is a different READY-only action that restores the exact production defaults. The panel reports the current motor/impulse and `Physics dt`, but both are read-only.
+
+After launch, physical setup controls lock because changing them would be an unmodeled intervention during flight. Reset Flight unlocks them. `F` and `I` change presentation only. `RIGHT` does not act while READY, while running, or after landing.
+
+Whenever an activity says to begin from **the default**, click **Restore Defaults** first. Reset Flight alone does not recover defaults after you have changed a setup value.
 
 ### Try it in RocketSim
 
@@ -79,15 +83,16 @@ Will hiding force arrows or the Inspector change the trajectory? Will reset prod
 
 #### Observe
 
-1. Press `SPACE` to launch.
-2. Press `F`, then `I`, while the rocket flies.
-3. Press `R` after part or all of the flight.
-4. Repeat the same launch.
-5. If `F` or `I` left an overlay hidden, press that key again before continuing so both force vectors and the Inspector are visible.
+1. Confirm the panel says READY TO CONFIGURE, then click **Restore Defaults**.
+2. Press `SPACE` or click **LAUNCH**.
+3. Press `F`, then `I`, while the rocket flies.
+4. Press `R` or click **RESET FLIGHT** after part or all of the flight.
+5. Repeat the same launch without restoring defaults again.
+6. If `F` or `I` left an overlay hidden, press that key again before continuing so both force vectors and the Inspector are visible.
 
 #### Explain
 
-The renderer reads simulation state but cannot modify it. Reset restores state, trajectory, outer-step count, and fractional wall-time accumulator. It does not reset the renderer's `F` or `I` visibility toggles. The same configuration and elapsed-time sequence is deterministic.
+The renderer reads simulation state and returns clicked actions but cannot modify physics. Reset Flight restores state, trajectory, outer-step count, and fractional wall-time accumulator while preserving the immutable selected configuration. It does not reset the renderer's `F` or `I` visibility toggles. The same configuration and elapsed-time sequence is deterministic. Restore Defaults replaces the READY configuration; it is not a flight-history operation.
 
 ### Check your understanding
 
@@ -207,7 +212,7 @@ If the upward thrust arrow is longer than the downward gravity arrow, must accel
 
 #### Observe
 
-Pause during flight. Add the displayed x components and y components of thrust, gravity, and drag. Compare with displayed net force. Divide net components by the displayed `1.000 kg` mass and compare with acceleration. Small differences can appear because the Inspector rounds displayed decimals.
+Pause during flight. Add the displayed x components and y components of thrust, gravity, and drag. Compare with displayed net force. Divide net components by the selected mass displayed in the Inspector and compare with acceleration. Small differences can appear because the Inspector rounds displayed decimals. If this activity is meant to use `1.000 kg`, click Restore Defaults before launch.
 
 #### Explain
 
@@ -235,7 +240,7 @@ F_T(t) = T(t) u_T
 F_g = (0, -m g)
 ```
 
-The default launch is vertical, so `theta = pi/2`. The default rocket mass is `1 kg`; its weight magnitude is:
+After Restore Defaults, launch is vertical, so `theta = pi/2`. The default selected rocket mass is `1 kg`; its weight magnitude is:
 
 ```text
 m g = (1 kg)(9.81 m/s^2) = 9.81 N
@@ -249,7 +254,9 @@ Real rockets lose mass as propellant burns. Their thrust direction follows the n
 
 ### ROCKETSIM MODEL
 
-Mass is constant. Thrust direction is fixed in world coordinates. There is no rail, pad reaction, hold-down, rotation, or thrust-vector control.
+Mass and thrust direction can be selected while READY, but both are constant for the entire flight. Thrust direction is fixed in world coordinates. There is no rail, pad reaction, hold-down, rotation, or thrust-vector control.
+
+The READY line labeled **fixed thrust direction (not attitude)** uses the exact configured direction. Angle is measured counterclockwise from world `+x`: `90 deg` is upward and `60 deg` is up-right. The panel displays degrees for usability, while the physics equation continues using radians. The unrotated rocket-shaped marker is only a point-position symbol.
 
 The launchable default starts above weight because a motor that begins at zero thrust would initially fall into the ground under this no-contact model. A separate airborne example in Lesson 9 safely demonstrates zero thrust at exact ignition.
 
@@ -261,7 +268,7 @@ Must maximum acceleration occur at the same time as maximum thrust?
 
 #### Observe
 
-Launch, pause during the declining portion of the motor timeline, and compare current thrust, weight, drag, net force, and acceleration. Single-step and watch thrust fall while it remains nonzero.
+Click Restore Defaults, launch, pause during the declining portion of the motor timeline, and compare current thrust, weight, drag, net force, and acceleration. Single-step and watch thrust fall while it remains nonzero.
 
 #### Explain
 
@@ -372,6 +379,8 @@ Cd  = 0.75
 A   = 0.01 m^2
 ```
 
+These three constants can be selected in the READY setup panel. Selecting a different value changes a model input between flights; it does not model changing weather, shape, attitude, or atmosphere during a flight. `Cd=0` or `rho=0` reaches the exact no-drag limiting case through the existing equation.
+
 ### Try it in RocketSim
 
 #### Predict
@@ -380,7 +389,7 @@ Which direction should drag point during vertical ascent? During vertical descen
 
 #### Observe
 
-Use `F` to show arrows. Observe drag during powered ascent, coast ascent, and descent. Pause and compare the sign of `vy` with the sign of vertical drag.
+Click Restore Defaults. Use `F` to show arrows. Observe drag during powered ascent, coast ascent, and descent. Pause and compare the sign of `vy` with the sign of vertical drag.
 
 #### Explain
 
@@ -418,7 +427,7 @@ Terminal velocity is an equilibrium approached by the equations, not a speed cla
 
 ### Headless laboratory activity
 
-The current UI has no parameter editor, so use this complete tested configuration from the repository root:
+This validation case intentionally needs settings outside the compact classroom panel: a zero motor, `A=1.0 m^2`, initial altitude `100 m`, and `dt=0.005 s`. The learner UI does not edit motors, initial conditions, or timestep, and its area limit is `0.100 m^2`, so use this complete tested headless configuration from the repository root:
 
 ```bash
 conda run --no-capture-output -n rocketsim python - <<'PY'
@@ -472,12 +481,12 @@ Scientific modeling means knowing what was left out.
 | REAL-WORLD PHYSICS | CURRENT ROCKETSIM MODEL |
 | --- | --- |
 | Rocket rests on a pad/rail before liftoff | No support, rail, hold-down, or normal-force model |
-| Motors consume propellant | Mass remains constant |
+| Motors consume propellant | Selected mass remains constant throughout one run |
 | Motor curves may be measured with uncertainty | Default curve is a self-authored synthetic polyline |
-| Thrust direction follows attitude/nozzle | Fixed world direction |
-| Atmosphere changes with altitude/weather | Constant density and still air |
+| Thrust direction follows attitude/nozzle | READY-selectable, then fixed world direction |
+| Atmosphere changes with altitude/weather | READY-selectable, then constant density and still air |
 | Wind changes air-relative velocity | No wind |
-| `Cd` and area depend on flow and attitude | Constant `Cd`, isotropic effective area |
+| `Cd` and area depend on flow and attitude | READY-selectable constants; isotropic effective area |
 | Rockets rotate and have stability dynamics | 2D point mass; no rotation, CG, or CP |
 | Lift and compressibility may matter | No lift, Mach, Reynolds, or compressibility effects |
 | Recovery and contact dynamics occur | Interpolated terminal ground event; no recovery or bounce |
@@ -530,7 +539,7 @@ RocketSim stores immutable samples and joins adjacent points with straight lines
 
 This is not a commercial, measured, or certified motor.
 
-Mass remains exactly `1 kg` in the default run. There is no propellant depletion, mass flow, specific impulse, exhaust velocity, chamber pressure, nozzle model, or combustion chemistry.
+Mass remains exactly `1 kg` in a restored-default run. A different mass may be selected before another run, but it then remains constant for that entire run. There is no propellant depletion, mass flow, specific impulse, exhaust velocity, chamber pressure, nozzle model, or combustion chemistry.
 
 ### Sampled interpolation
 
@@ -648,7 +657,7 @@ Before launching, write answers:
 
 #### Observe
 
-1. Launch with `SPACE`.
+1. Click Restore Defaults, then launch with `SPACE` or the mouse LAUNCH button.
 2. Use the highest plotted sample and the stored-peak readout to identify the early `0.05 s` peak; do not try to catch it manually.
 3. Pause anywhere in the broad declining-thrust interval and record the actual displayed time.
 4. Record current thrust, delivered impulse, velocity, drag, net force, and acceleration.
@@ -731,6 +740,160 @@ The last equality uses `m=1 kg`, constant mass, vertical thrust, zero gravity, a
 6. How can `T(0)=0` coexist with positive impulse over the next interval?
 7. Which Prompt 04 quantities are exact for the stored curve, and which flight quantities remain numerical approximations?
 8. Why does current RocketSim keep mass constant even though real motors consume propellant?
+
+---
+
+## 10. Designing Controlled Experiments with RocketSim
+
+### What are we trying to understand?
+
+How can changing one model input at a time reveal a cause-and-effect relationship without confusing several effects?
+
+### The experimental roles
+
+- The **independent variable** is the one setup value you deliberately change.
+- A **dependent variable** is an observed result that may respond, such as acceleration, apogee, flight time, final horizontal position, or drag force.
+- **Controlled variables** are every setup value held identical between runs.
+
+Changing mass, angle, and drag coefficient together may make a dramatic trajectory, but it cannot tell you which change caused which part. RocketSim therefore supports a deliberate loop:
+
+```text
+PREDICT  What should change, in which direction, and why?
+CONTROL  Restore a baseline; change one independent variable only.
+LAUNCH   Run the same production model.
+OBSERVE  Record Inspector values and visible outcomes.
+EXPLAIN  Connect the difference to an implemented equation.
+```
+
+RocketSim has no automatic comparison history. Write each run's settings and observations before Reset Flight clears the trajectory. Reset Flight preserves your selected values for a repeat; Restore Defaults recovers the common baseline before a new experiment.
+
+### What the six controls mean
+
+| READY control | Range / step | Meaning during one run | What it does not add |
+| --- | --- | --- | --- |
+| mass | `0.1–10 kg` / `0.1 kg` | one constant point mass | propellant depletion, wet/dry mass |
+| fixed thrust direction | `10–90 deg` / `5 deg` | `u_T=(cos(theta), sin(theta))`, angle from world `+x` | attitude, rail angle, rotation, stability |
+| `Cd` | `0–2` / `0.05` | one constant isotropic drag coefficient | shape/Mach/Reynolds/attitude variation |
+| reference area | `0.001–0.100 m^2` / `0.001 m^2` | one constant effective isotropic area | changing projected area or geometry |
+| air density | `0–2 kg/m^3` / `0.05 kg/m^3` | one constant still-air density | weather, wind, altitude variation |
+| gravity | `0–20 m/s^2` / `0.25 m/s^2` | one constant downward magnitude | spherical planets or altitude variation |
+
+These are educational button ranges, not claims that nature is limited to them. Changing a model parameter is also not the same as constructing a real rocket that achieves it. The simulator includes no manufacturing constraints, measurement uncertainty, calibration uncertainty, or safety assessment. Its results remain predictions of the documented educational model.
+
+The restored values `rho=1.225 kg/m^3` and `g=9.81 m/s^2` lie between the button step grids. The controls step from the current value, so `+` then `-` returns to the exact displayed default instead of snapping it to a different grid point.
+
+### A valid result can be NO LIFTOFF—or no return
+
+The full range is intentionally exploratory, not a promise that every combination flies. RocketSim has no pad support, rail, surface sliding, or hold-down. A heavy rocket, high gravity, or a shallow fixed thrust direction may fail the existing first-step ground-admission rule and enter **NO LIFTOFF** at `t=0`. With restored defaults, directions around `45 deg` and below do this. That is a result of this simplified free-flight boundary, not a broken button and not a realistic launch-pad prediction.
+
+At the other limit, `g=0` with positive upward motion may never return to ground. Use Reset Flight to end that activity. `Cd=0` or `rho=0` removes drag from this model; it does not create a complete vacuum or spaceflight model.
+
+### Experiment A — constant selected mass
+
+Begin with Restore Defaults. These masses were chosen because both lift off under the no-pad boundary:
+
+| setting | Run A | Run B |
+| --- | ---: | ---: |
+| mass — independent | `1.0 kg` | `1.2 kg` |
+| direction — controlled | `90 deg` | `90 deg` |
+| `Cd` — controlled | `0.75` | `0.75` |
+| area — controlled | `0.010 m^2` | `0.010 m^2` |
+| density — controlled | `1.225 kg/m^3` | `1.225 kg/m^3` |
+| gravity — controlled | `9.81 m/s^2` | `9.81 m/s^2` |
+| motor and physics timestep — controlled/read-only | default curve; `0.010 s` | default curve; `0.010 s` |
+
+#### Predict
+
+Which run should have greater launch acceleration and apogee? Will total motor impulse change? As an analytical instantaneous `t=0` prediction, before drag grows, compare `a_y = T/m - g` using `T(0)=12 N`: the model predicts `2.19 m/s^2` for Run A and `0.19 m/s^2` for Run B. Launch starts the running clock, so a manual pause will normally show a later time and a different rising-curve thrust. Use the `t=0` values to predict the sign and ordering, not as exact manually paused readouts.
+
+#### Observe
+
+1. Run A, pausing early to record actual time, mass, thrust, weight, net force, and acceleration. Check the predicted sign and cross-run ordering rather than expecting the exact `t=0` numbers.
+2. Resume, visually note maximum height, and record landed flight time before Reset Flight.
+3. Reset Flight, increase mass twice to `1.2 kg`, and confirm every other displayed setup value is unchanged.
+4. Repeat the same observations for Run B.
+
+For the current validated timestep, representative production results are about `8.103 m` versus `4.683 m` apogee and `3.058 s` versus `2.461 s` landed time. Use the Inspector and trajectory for your own run rather than treating rounded values as exact analytical answers.
+
+#### Explain
+
+The motor curve and its `17.58 N*s` total impulse are identical. More constant mass means less velocity change per unit net impulse. Drag history also changes indirectly: the slower velocity history changes the `speed^2` force even though `rho`, `Cd`, and area were controlled. Mass is different **between** runs but never decreases **within** either run.
+
+### Experiment B — drag coefficient at a useful visible scale
+
+Begin with Restore Defaults, then set area to `0.100 m^2` in both runs so the difference is readable at the current display scale:
+
+| setting | Run A | Run B |
+| --- | ---: | ---: |
+| `Cd` — independent | `0.50` | `1.00` |
+| area — controlled | `0.100 m^2` | `0.100 m^2` |
+| mass, direction, density, gravity, motor, physics timestep | restored defaults | restored defaults |
+
+#### Predict
+
+At exactly equal velocity, doubling `Cd` doubles drag magnitude because:
+
+```text
+|F_drag| = 0.5 rho Cd A speed^2
+```
+
+Does that mean every trajectory result must scale by exactly two? Why not?
+
+#### Observe
+
+Run each case, recording both actual speed and drag at a roughly similar speed, qualitative trajectory height, and landed flight time. Treat the near-equal-speed observation as qualitative. For a cleaner numerical comparison, calculate `|F_drag|/speed^2` from each recorded pair; with controlled `rho` and area, that ratio should scale directly with `Cd`. Representative production results are about `7.190 m` versus `6.442 m` apogee and `2.919 s` versus `2.801 s` landed time. The current app does not retain Run A automatically, so record it before reset.
+
+#### Explain
+
+Equal-speed force comparison isolates the direct `Cd` factor. The complete trajectory does not scale linearly because changing drag changes velocity, which feeds back through `speed^2`, and thrust and gravity continue acting.
+
+### Experiment C — fixed thrust direction
+
+Begin with Restore Defaults:
+
+| setting | Run A | Run B |
+| --- | ---: | ---: |
+| fixed direction — independent | `90 deg` | `60 deg` |
+| every other setup value, motor, and physics timestep | restored defaults | restored defaults |
+
+Immediately before interpreting this experiment, remember:
+
+- angle is counterclockwise from world `+x`;
+- `90 deg` is upward and `60 deg` is up-right;
+- degrees are displayed, but radians are used internally;
+- the same scalar `T(t)` is split into x and y components;
+- the preview and rocket marker do not represent simulated attitude; and
+- there is no rotation, stability, rail constraint, lift, or angle-dependent drag area.
+
+#### Predict
+
+For `60 deg`, which thrust component becomes positive horizontally? Is its vertical thrust component larger or smaller than for `90 deg`? Predict the sign of final horizontal position.
+
+#### Observe
+
+Run both cases. Compare thrust components just after launch, trajectory shape, apogee, and final x position. The current production model's `60 deg` run lands near `x=18.118 m`; the vertical run remains near `x=0`.
+
+#### Explain
+
+The motor did not become weaker. Its vector changed:
+
+```text
+F_Tx = T cos(theta)
+F_Ty = T sin(theta)
+```
+
+At `60 deg`, some of the same thrust magnitude builds horizontal momentum, while the vertical component opposing weight is smaller. The new 2D trajectory follows fixed world components, not a rotating vehicle.
+
+### Check your understanding
+
+1. In the mass experiment, name the independent variable, at least two dependent variables, and the controlled conditions.
+2. Why is `1.0 kg` versus `2.0 kg` a poor default experiment in this simulator?
+3. Why should drag be compared at similar speed when isolating `Cd`?
+4. Why does doubling `Cd` not simply halve the whole trajectory?
+5. What exactly does the launch-direction preview represent?
+6. Why are setup controls locked during a paused flight?
+7. Which action repeats a selected experiment, and which recovers its baseline defaults?
+8. Why are NO LIFTOFF and non-returning zero-gravity coast valid modeled outcomes but not complete real launch predictions?
 
 ---
 

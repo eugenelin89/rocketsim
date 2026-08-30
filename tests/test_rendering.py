@@ -74,7 +74,13 @@ def test_rendering_does_not_mutate_simulation_state() -> None:
 def test_core_modules_do_not_depend_on_pygame() -> None:
     package_root = Path(__file__).parents[1] / "src" / "rocket_sim"
 
-    for module_name in ("config.py", "physics.py", "propulsion.py", "simulation.py"):
+    for module_name in (
+        "config.py",
+        "setup.py",
+        "physics.py",
+        "propulsion.py",
+        "simulation.py",
+    ):
         tree = ast.parse((package_root / module_name).read_text())
         imported_roots = {
             alias.name.split(".")[0]

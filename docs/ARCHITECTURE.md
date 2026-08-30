@@ -5,10 +5,14 @@
 The simulator separates scientific state evolution from Pygame presentation:
 
 ```text
-Pygame events + frame time
+Pygame keyboard/mouse events + frame time
             |
             v
-app.py -> Simulation.advance_elapsed()
+app.py shared typed-action dispatcher
+       |                    |
+       | READY setup        | flight clock
+       v                    v
+setup.py -> validated config -> Simulation.advance_elapsed()
             |
             v
 fixed-step accumulator -> simulation.py lifecycle/events + knot segmentation
@@ -45,6 +49,15 @@ rendering.py world transform + drawing + telemetry
 
 It contains no Pygame, motor database, file loader, network access, variable mass, or mutable motor state.
 
+### `setup.py`
+
+- typed application actions shared by keyboard and mouse paths
+- the six learner-facing parameter specifications, UI ranges, increments, units, and formatting
+- degree display conversion for the internally radian-valued fixed thrust direction
+- immutable `dataclasses.replace` configuration rebuilding that preserves every unedited field, including exact `ThrustCurve` identity and `physics_dt_s`
+
+It contains no Pygame and does not own simulation lifecycle or a second parameter store. Its ranges constrain only the educational controls; the broader validated `SimulationConfig` API remains available to headless use.
+
 ### `physics.py`
 
 - gravitational, thrust, and constant-property quadratic-drag equations
@@ -66,8 +79,9 @@ It does not own wall time, phases, events, or drawing.
 - exact curve thrust impulse plus start-velocity drag on each internal segment
 - deterministic interpolation of the first discrete ground crossing
 - physics step count and trajectory history
+- getter-only active configuration and atomic whole-config replacement while READY
 
-Configuration is the source of constant mass. Every recorded state repeats that value so the invariant is observable.
+Configuration is the source of constant mass. Every recorded state repeats that value so the invariant is observable. An accepted READY replacement rebuilds the initial state, singleton trajectory, accumulator, and lifecycle bookkeeping together. Running, paused, coast, and landed configurations cannot be replaced; Reset Flight preserves the selected configuration while rebuilding run state.
 
 ### `rendering.py`
 
@@ -76,13 +90,15 @@ Configuration is the source of constant mass. Every recorded state repeats that 
 - force-vector overlay with one rendering-only newtons-to-pixels scale
 - Physics Inspector formatting for state, forces, parameters, and equations
 - production-curve motor timeline, samples, cursor, burnout marker, and metrics
+- setup panel drawing, exact mouse hitbox geometry, disabled-state presentation, and fixed-direction preview
 - no mutation of simulation state
 
 ### `app.py` and `__main__.py`
 
 - `python -m rocket_sim` entry point
 - Pygame initialization and shutdown
-- `SPACE`, `RIGHT`, `R`, `F`, `I`, and `ESC` controls
+- one typed-action dispatcher for keyboard and mouse behavior
+- `SPACE`, `RIGHT`, `R`, `F`, `I`, and `ESC` controls plus mouse setup, primary, reset, and restore-default actions
 - bounded `run(max_frames=...)` path for dummy-display smoke validation
 
 ## Shared force-observability contract
@@ -111,6 +127,12 @@ Burnout and landing are handled inside the simulation boundary. A post-liftoff t
 
 `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` is the learner-facing tutorial and interactive laboratory guide. It derives equations from `docs/PHYSICS_MODEL.md`, validation claims from `docs/VALIDATION.md`, and controls from the implemented application. It is reviewed retroactively when physics or educational behavior changes; it is not an independent source of scientific truth.
 
+## Pre-launch laboratory contract
+
+The UI reads all six displayed values directly from `Simulation.config`. The renderer returns typed actions but never performs configuration replacement. The application dispatches an adjustment by creating a new validated configuration and requesting a READY-only atomic replacement from `Simulation`. Restore Defaults requests an exact new `SimulationConfig()`; Reset Flight uses the existing selected config. The motor/impulse and physics timestep are shown from production config but read-only, no timestep control is exposed, and there is no launchability shortcut separate from the production ground-admission path.
+
+The direction preview is rendering-only and uses the exact configured radians. It carries no force magnitude, leaves READY forces inactive, and does not rotate the point marker or represent attitude.
+
 ## Extension limits
 
-Prompt 04 adds the smallest active propulsion boundary: one immutable sampled curve and no general motor-data ecosystem. It does not introduce variable mass, propellant depletion, motor-file import, motor selection, wind, lift, atmosphere variation, experiment frameworks, plugins, databases, ECS, or networking. Later effects should be added one validated physical model at a time without changing the current ownership boundary silently.
+Prompt 05 adds an experiment interface over existing validated parameters, not a new physical effect or a run-comparison framework. It does not introduce variable mass, propellant depletion, motor-file import, motor selection/editing, wind, lift, atmosphere variation, experiment persistence/export, plots, plugins, databases, ECS, or networking. Later effects should be added one validated physical model at a time without changing the current ownership boundary silently.

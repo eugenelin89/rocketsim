@@ -249,6 +249,14 @@ physics timestep  0.01 s
 
 The thrust curve is self-authored synthetic educational data, not measurement or certification of a commercial motor. For this educational approximation, the vertical terminal speed under gravity alone is about `46.21 m/s`. The default flight remains capable of liftoff without a pad-support rule.
 
+## Pre-launch configuration boundary
+
+Prompt 05 changes how an existing `SimulationConfig` is selected, not the equations above. While READY, the learner may replace the complete immutable configuration through controls for mass, fixed world thrust direction, `Cd`, effective reference area, constant air density, and constant gravitational magnitude. Direction is displayed in degrees but converted to the same internal radians used by `u_T = (cos(theta), sin(theta))`.
+
+After launch, the owned configuration cannot be replaced in powered, paused, coast, or landed states. Every selected scalar—and especially mass—remains constant for the entire run. Reset Flight rebuilds the run under the same selected configuration; Restore Defaults while READY creates the exact implemented default configuration. Neither action changes the curve physics, scales thrust with mass, or introduces propellant depletion.
+
+The setup ranges are presentation constraints for classroom usability, not physical validation limits. Their broad combinations intentionally include zero-drag and zero-gravity limiting cases as well as configurations that fail the existing impulse-aware ground-admission rule. No hidden launchability correction, support force, rail, or hold-down is added. The READY direction guide has no force magnitude and represents fixed thrust direction only, not attitude or rotation.
+
 ## Explicit omissions and interpretation limits
 
 The model has no wind, altitude-varying density, pressure or temperature, lift, orientation-dependent area, variable `Cd`, Mach/Reynolds/compressibility effects, propellant depletion, variable mass, measured motor-data import, pad or launch-rail contact, attitude change, rotation, aerodynamic stability, recovery device, bounce, structural dynamics, Earth curvature, or Coriolis effect. Its single direction-independent effective area makes it an isotropic point-mass drag approximation.

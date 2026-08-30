@@ -69,6 +69,48 @@ Relevant specialists may investigate independently and in parallel. The parent a
 
 Keep detailed reviewer behavior in `.codex/agents/*.toml`. Keep scientific truth in `docs/PHYSICS_MODEL.md` and validation methodology in `docs/VALIDATION.md`.
 
+## Agent Context and Review Efficiency
+
+The objective is more scientific confidence per unit of model context and reasoning, not fewer scientific checks merely for token savings.
+
+### Minimum sufficient specialist context
+
+The parent agent owns broad project context and gives each specialist the minimum sufficient context for an independent domain review. A specialist should normally receive the reconciled milestone contract, authoritative sections relevant to its domain, changed or relevant source and tests, relevant quantitative evidence, and the relevant diff. Do not automatically require every specialist to reread the complete milestone prompt, all historical prompts, every project document, or unrelated source and tests. A specialist may request any additional context needed for a scientifically defensible judgment.
+
+Independent scientific evidence must remain genuinely independent. Production calculations, test oracles, and specialist derivations should not be collapsed into one source merely to reduce context.
+
+### Review classification and selective re-review
+
+For each milestone, classify every specialist as:
+
+- `CORE`: the milestone directly changes the specialist's domain; normally use appropriate pre- and post-implementation review;
+- `FOCUSED`: the milestone may affect or regress the domain without changing its governing model; ask a narrow question with narrow context; or
+- `NOT REQUIRED`: the domain is unchanged and adequately protected by existing regression evidence; do not invoke the specialist merely because it exists.
+
+Record the review matrix in the milestone prompt record. Reinvoke a specialist only when its BLOCKING or IMPORTANT finding was corrected and confirmation is useful, or when later implementation materially changed its reviewed domain. Do not perform blanket specialist re-review as a generic final ritual.
+
+### Reasoning effort and staged validation
+
+The parent agent and specialist reviewers use High reasoning effort by default. The parent may use Extra High only for genuinely difficult scientific disagreement, numerical-method reconciliation, event-semantics change, or a hard-to-reverse architecture decision. Return to High for ordinary implementation, validation, and repository work where practical. This is an efficiency policy, not a quality ceiling.
+
+Use staged validation:
+
+```text
+during implementation              affected focused tests
+after subsystem integration        relevant subsystem groups
+before post-review                 reviewer-required evidence
+after material review fixes        affected tests
+before implementation commit       complete suite
+```
+
+Run the complete suite again after a late material core change when necessary. Unrelated documentation edits do not invalidate an otherwise current test result.
+
+### Current-state context and compact resumes
+
+Prefer current authoritative sources—`AGENTS.md`, `docs/PHYSICS_MODEL.md`, `docs/VALIDATION.md`, `docs/ARCHITECTURE.md`, accepted decisions, and current implementation/tests—over automatic historical prompt rereading. Use historical prompt records for provenance, supersession, regression archaeology, or ambiguity resolution.
+
+Normal interruption recovery should rely on repository state. A compact resume may direct the parent to inspect the exact Git state, diff, test state, and completed reviewer results; preserve valid work, avoid repeating completed reviews, and continue from the first incomplete gate. A large milestone restatement is required only when important state cannot be recovered from the repository.
+
 ## Living Rocketry Course Policy
 
 RocketSim is both a scientifically inspectable simulator and an educational environment for learning rocketry. Maintain `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` as the living tutorial-style course for the validated simulator.
@@ -132,11 +174,13 @@ When a user prompt causes any repository file to be created, modified, moved, or
 - Use the next unused integer ID, zero-padded to two digits.
 - Choose the scope that the prompt primarily affects, such as `platform`, `physics`, `rendering`, `motor`, `atmosphere`, `validation`, `experiments`, or `docs`.
 - Use `platform` for repository-wide or cross-subsystem work.
-- Preserve the user's implementation prompt verbatim. Include material follow-up constraints or approvals that change how the prompt is implemented.
-- Record the date/time when practical, relevant context and constraints, decisions made, implementation summary, files created/modified/deleted, validation performed, implementation commit SHA, and the implementation commit diff against its parent.
+- Preserve the user's approved implementation prompt verbatim. Include material follow-up constraints or approvals that change how the prompt is implemented. Routine resume instructions that add no requirement do not need verbatim archival.
+- Record the date/time when practical, relevant context and constraints, decisions made, implementation summary, files created/modified/deleted, validation performed, starting commit SHA, implementation parent SHA, implementation commit SHA, prompt-record commit SHA where applicable, SHA-256 of the zero-context implementation diff, and the exact Git command that reproduces the patch.
+- Git is the authoritative exact patch store. Do not embed the complete implementation patch in Markdown by default. Embed it only when a specific reason requires preserving the patch outside Git.
+- Use an exact recovery command equivalent to `git show --no-ext-diff --binary --format= <implementation-sha>`. Compute the recorded zero-context diff digest from an equivalent `git show --no-ext-diff --binary --unified=0 --format= <implementation-sha>` byte stream.
 - Do not reconstruct prompt records for work that predates this policy unless the user explicitly requests it.
 - Commit requested implementation or documentation changes first with a concise, descriptive implementation commit.
-- Generate that commit's diff against its parent, then complete the prompt record with the commit SHA and diff.
+- Generate and hash that commit's zero-context diff against its parent, then complete the compact prompt record with the required SHAs, digest, and recovery command.
 - Commit the prompt record separately.
 - If a meaningful durable decision is made, create or update its decision record and ensure it is committed as documentation, normally with the implementation it explains.
 - Never include unrelated pre-existing work in either commit.

@@ -7,9 +7,17 @@ import math
 
 import pygame
 
-from .config import Vector2
+from .config import SimulationConfig, Vector2
 from .physics import ForceBreakdown
 from .propulsion import ThrustCurve
+from .setup import (
+    AppAction,
+    AppActionKind,
+    SETUP_PARAMETER_SPECS,
+    SetupParameter,
+    setup_display_rows,
+    setup_display_value,
+)
 from .simulation import FlightPhase, Simulation
 
 
@@ -21,9 +29,30 @@ FORCE_COLORS: dict[str, tuple[int, int, int]] = {
 }
 
 CONTROL_ROWS = (
-    "SPACE launch/pause  RIGHT single-step  R reset  ESC exit",
-    "F force vectors  I Physics Inspector",
+    "SPACE / mouse: launch, pause, resume   RIGHT: paused single-step",
+    "R / mouse Reset Flight   F force vectors   I Physics Inspector   ESC exit",
 )
+
+SETUP_PANEL_RECT = pygame.Rect(18, 92, 365, 524)
+SETUP_ROW_Y_PX = {
+    SetupParameter.MASS: 178,
+    SetupParameter.LAUNCH_ANGLE: 235,
+    SetupParameter.DRAG_COEFFICIENT: 291,
+    SetupParameter.REFERENCE_AREA: 325,
+    SetupParameter.AIR_DENSITY: 381,
+    SetupParameter.GRAVITY: 415,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class SetupControl:
+    """One visible setup control and its shared application action."""
+
+    identifier: str
+    rect: pygame.Rect
+    label: str
+    action: AppAction
+    enabled: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +133,31 @@ def force_vector_endpoint(
     return (
         round(origin_px[0] + force_n.x * pixels_per_newton),
         round(origin_px[1] - force_n.y * pixels_per_newton),
+    )
+
+
+def launch_direction_preview_endpoint(
+    origin_px: tuple[int, int],
+    launch_angle_rad: float,
+    length_px: float = 58.0,
+) -> tuple[int, int]:
+    """Map a fixed world thrust direction to a rendering-only preview line."""
+
+    return (
+        round(origin_px[0] + length_px * math.cos(launch_angle_rad)),
+        round(origin_px[1] - length_px * math.sin(launch_angle_rad)),
+    )
+
+
+def setup_read_only_rows(config: SimulationConfig) -> tuple[str, str]:
+    """Format the non-editable motor and timestep setup from production config."""
+
+    return (
+        "MOTOR (read-only): current sampled curve",
+        (
+            f"Total impulse {config.thrust_curve.total_impulse_ns:.3f} N*s"
+            f"   Physics dt: {config.physics_dt_s:.3f} s"
+        ),
     )
 
 
@@ -200,7 +254,12 @@ def physics_inspector_rows(
         force_row("Drag", forces.drag_n),
         force_row("Net", forces.net_n),
         "",
-        "PARAMETERS (constant)",
+        "SELECTED SETUP (constant this flight)",
+        (
+            "Fixed thrust direction: "
+            f"{math.degrees(simulation.config.launch_angle_rad):.1f} deg"
+        ),
+        f"Gravity: {simulation.config.gravity_m_s2:.3f} m/s^2",
         f"rho: {simulation.config.air_density_kg_m3:.4f} kg/m^3",
         f"Cd: {simulation.config.drag_coefficient:.4f}",
         f"Area: {simulation.config.reference_area_m2:.4f} m^2",
@@ -277,11 +336,18 @@ class Renderer:
         self._draw_thrust_timeline(
             surface, simulation, forces.thrust_n.magnitude
         )
+        self._draw_setup_panel(surface, simulation)
         rocket_position = world_to_screen(
             simulation.state.position_m,
             self.origin_px,
             self.pixels_per_metre,
         )
+        if simulation.state.phase is FlightPhase.READY:
+            self._draw_launch_direction_preview(
+                surface,
+                rocket_position,
+                simulation.config.launch_angle_rad,
+            )
         self._draw_rocket(surface, rocket_position)
 
         if self.show_force_vectors:
@@ -295,6 +361,184 @@ class Renderer:
                 "Physics Inspector hidden - press I", True, (182, 194, 211)
             )
             surface.blit(rendered, (self.world_width_px + 20, 22))
+
+    def setup_controls(self, simulation: Simulation) -> tuple[SetupControl, ...]:
+        """Return the exact visible/clickable setup and flight controls."""
+
+        is_ready = simulation.state.phase is FlightPhase.READY
+        controls: list[SetupControl] = []
+        for spec in SETUP_PARAMETER_SPECS:
+            row_y = SETUP_ROW_Y_PX[spec.parameter]
+            current = setup_display_value(simulation.config, spec.parameter)
+            controls.extend(
+                (
+                    SetupControl(
+                        f"{spec.parameter.value}.decrease",
+                        pygame.Rect(207, row_y, 32, 26),
+                        "-",
+                        AppAction(
+                            AppActionKind.ADJUST_SETUP,
+                            spec.parameter,
+                            -1,
+                        ),
+                        is_ready and current > spec.minimum,
+                    ),
+                    SetupControl(
+                        f"{spec.parameter.value}.increase",
+                        pygame.Rect(333, row_y, 32, 26),
+                        "+",
+                        AppAction(
+                            AppActionKind.ADJUST_SETUP,
+                            spec.parameter,
+                            1,
+                        ),
+                        is_ready and current < spec.maximum,
+                    ),
+                )
+            )
+
+        if is_ready:
+            primary_label = "LAUNCH"
+        elif simulation.is_paused:
+            primary_label = "RESUME"
+        elif simulation.is_finished:
+            primary_label = "FLIGHT COMPLETE"
+        else:
+            primary_label = "PAUSE"
+
+        controls.extend(
+            (
+                SetupControl(
+                    "primary",
+                    pygame.Rect(30, 508, 341, 36),
+                    primary_label,
+                    AppAction(AppActionKind.PRIMARY),
+                    not simulation.is_finished,
+                ),
+                SetupControl(
+                    "reset_flight",
+                    pygame.Rect(30, 555, 164, 36),
+                    "RESET FLIGHT",
+                    AppAction(AppActionKind.RESET_FLIGHT),
+                    True,
+                ),
+                SetupControl(
+                    "restore_defaults",
+                    pygame.Rect(207, 555, 164, 36),
+                    "RESTORE DEFAULTS",
+                    AppAction(AppActionKind.RESTORE_DEFAULTS),
+                    is_ready,
+                ),
+            )
+        )
+        return tuple(controls)
+
+    def action_at(
+        self, position_px: tuple[int, int], simulation: Simulation
+    ) -> AppAction | None:
+        """Return the enabled action under a mouse position without mutation."""
+
+        for control in self.setup_controls(simulation):
+            if control.enabled and control.rect.collidepoint(position_px):
+                return control.action
+        return None
+
+    def _draw_setup_panel(
+        self, surface: pygame.Surface, simulation: Simulation
+    ) -> None:
+        panel = SETUP_PANEL_RECT
+        pygame.draw.rect(surface, (18, 31, 53), panel, border_radius=6)
+        pygame.draw.rect(surface, (78, 98, 126), panel, 1, border_radius=6)
+
+        heading = self._heading_font.render(
+            "PRE-LAUNCH LAB", True, (245, 214, 96)
+        )
+        surface.blit(heading, (30, 101))
+        ready = simulation.state.phase is FlightPhase.READY
+        status = (
+            "READY TO CONFIGURE"
+            if ready
+            else "SETUP LOCKED - Reset flight to modify setup."
+        )
+        status_color = (102, 221, 154) if ready else (238, 168, 108)
+        surface.blit(
+            self._small_font.render(status, True, status_color),
+            (30, 131),
+        )
+
+        for heading_text, heading_y in (
+            ("ROCKET", 157),
+            ("LAUNCH", 214),
+            ("AERODYNAMICS", 270),
+            ("ENVIRONMENT", 360),
+        ):
+            rendered = self._small_font.render(
+                heading_text, True, (142, 203, 255)
+            )
+            surface.blit(rendered, (30, heading_y))
+
+        controls = self.setup_controls(simulation)
+        controls_by_id = {control.identifier: control for control in controls}
+        for row in setup_display_rows(simulation.config):
+            row_y = SETUP_ROW_Y_PX[row.parameter]
+            surface.blit(
+                self._small_font.render(row.label, True, (232, 238, 247)),
+                (30, row_y + 5),
+            )
+            value_surface = self._small_font.render(
+                row.value, True, (245, 214, 96) if ready else (157, 166, 181)
+            )
+            value_rect = value_surface.get_rect(center=(286, row_y + 13))
+            surface.blit(value_surface, value_rect)
+            for suffix in ("decrease", "increase"):
+                self._draw_button(
+                    surface,
+                    controls_by_id[f"{row.parameter.value}.{suffix}"],
+                )
+
+        for index, text in enumerate(setup_read_only_rows(simulation.config)):
+            surface.blit(
+                self._small_font.render(text, True, (213, 222, 236)),
+                (30, 453 + 18 * index),
+            )
+
+        if not ready:
+            note = "Physical values stay constant during this flight."
+            surface.blit(
+                self._small_font.render(note, True, (238, 168, 108)),
+                (30, 486),
+            )
+
+        for identifier in ("primary", "reset_flight", "restore_defaults"):
+            self._draw_button(surface, controls_by_id[identifier])
+
+    def _draw_button(
+        self, surface: pygame.Surface, control: SetupControl
+    ) -> None:
+        fill = (47, 108, 87) if control.enabled else (55, 63, 78)
+        border = (102, 221, 154) if control.enabled else (104, 111, 125)
+        text_color = (243, 247, 251) if control.enabled else (148, 154, 166)
+        pygame.draw.rect(surface, fill, control.rect, border_radius=4)
+        pygame.draw.rect(surface, border, control.rect, 1, border_radius=4)
+        rendered = self._small_font.render(control.label, True, text_color)
+        surface.blit(rendered, rendered.get_rect(center=control.rect.center))
+
+    def _draw_launch_direction_preview(
+        self,
+        surface: pygame.Surface,
+        origin_px: tuple[int, int],
+        launch_angle_rad: float,
+    ) -> None:
+        endpoint = launch_direction_preview_endpoint(
+            origin_px, launch_angle_rad
+        )
+        color = (245, 214, 96)
+        pygame.draw.line(surface, color, origin_px, endpoint, 2)
+        pygame.draw.circle(surface, color, endpoint, 4)
+        label = self._small_font.render(
+            "fixed thrust direction (not attitude)", True, color
+        )
+        surface.blit(label, (endpoint[0] + 6, endpoint[1] - 9))
 
     def _draw_trajectory(
         self, surface: pygame.Surface, simulation: Simulation
@@ -519,10 +763,10 @@ class Renderer:
             elif text in {
                 "MOTOR",
                 "FORCES",
-                "PARAMETERS (constant)",
+                "SELECTED SETUP (constant this flight)",
                 "EQUATIONS",
             }:
                 rendered = self._font.render(text, True, (142, 203, 255))
             else:
                 rendered = self._small_font.render(text, True, (232, 238, 247))
-            surface.blit(rendered, (panel_x, 12 + index * 17))
+            surface.blit(rendered, (panel_x, 12 + index * 16))
