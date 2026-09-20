@@ -2,7 +2,7 @@
 
 ## Implemented boundary
 
-The simulator separates scientific state evolution from Pygame presentation:
+The simulator separates scientific state evolution, Pygame-independent game evaluation, and Pygame presentation:
 
 ```text
 Pygame keyboard/mouse events + frame time
@@ -22,12 +22,19 @@ propulsion.py curve geometry -> physics.py force/impulse update
             |
             v
 immutable RocketState history
-            |
-            v
-rendering.py world transform + drawing + telemetry
+       |                         |
+       | completed run           | live observation
+       v                         v
+missions.py FlightResult -> objective evaluation -> score/stars
+       |
+       v
+game.py session/view/progression
+       |
+       v
+rendering.py world transform + Sandbox/Mission drawing + telemetry
 ```
 
-`config.py`, `physics.py`, and `simulation.py` do not import Pygame. `app.py` owns window creation, input, the display clock, and the outer loop. `rendering.py` owns pixels, fonts, drawing, and the +y-up to +y-down transform.
+`config.py`, `physics.py`, `simulation.py`, `missions.py`, and `game.py` do not import Pygame. `app.py` owns window creation, input, the display clock, and the outer loop. `rendering.py` owns pixels, fonts, drawing, target/HUD presentation, and the +y-up to +y-down transform.
 
 ## Module responsibilities
 
@@ -83,6 +90,26 @@ It does not own wall time, phases, events, or drawing.
 
 Configuration is the source of constant mass. Every recorded state repeats that value so the invariant is observable. An accepted READY replacement rebuilds the initial state, singleton trajectory, accumulator, and lifecycle bookkeeping together. Running, paused, coast, and landed configurations cannot be replaced; Reset Flight preserves the selected configuration while rebuilding run state.
 
+### `missions.py`
+
+- immutable terminal `FlightResult` extracted from exactly one completed `Simulation`
+- explicit `NO_LIFTOFF` versus post-liftoff `LANDED` outcome
+- captured immutable run configuration plus recorded apogee, speed, acceleration, drag, contact, and time metrics
+- five explicit immutable missions, inclusive objective rules, score components, and star thresholds
+- no Pygame, lifecycle mutation, alternate physics calculation, scripting engine, or persistence
+
+Landing position and impact speed are absent for `NO_LIFTOFF`; they are never zero-filled. Apogee and extrema are maxima over recorded numerical states. Impact speed is total pre-contact ground-frame speed, not impact deceleration. Mission evaluation consumes only the `FlightResult`, so scoring cannot accidentally use a later READY configuration.
+
+### `game.py`
+
+- mode/mission/brief/flight/results view state
+- presentation-only countdown that leaves simulation time and history unchanged before ignition
+- mission setup allow-list enforcement through the existing validated adjustment and READY replacement paths
+- one-time terminal result extraction/evaluation, in-memory best scores, and sequential unlocks
+- retry preserving the selected mission configuration and mission reset restoring the mission base configuration
+
+`GameSession` owns no force, integrator, trajectory, event, motor, or timestep calculation. From ignition onward it supplies elapsed time to an ordinary `Simulation` exactly as Sandbox does.
+
 ### `rendering.py`
 
 - world metres and force vectors to screen pixels
@@ -91,6 +118,7 @@ Configuration is the source of constant mass. Every recorded state repeats that 
 - Physics Inspector formatting for state, forces, parameters, and equations
 - production-curve motor timeline, samples, cursor, burnout marker, and metrics
 - setup panel drawing, exact mouse hitbox geometry, disabled-state presentation, and fixed-direction preview
+- mode selection, mission brief/selection/results views, mission HUD, and target geometry transformed by the shared `world_to_screen`
 - no mutation of simulation state
 
 ### `app.py` and `__main__.py`
@@ -100,6 +128,21 @@ Configuration is the source of constant mass. Every recorded state repeats that 
 - one typed-action dispatcher for keyboard and mouse behavior
 - `SPACE`, `RIGHT`, `R`, `F`, `I`, and `ESC` controls plus mouse setup, primary, reset, and restore-default actions
 - bounded `run(max_frames=...)` path for dummy-display smoke validation
+
+## Mission evaluation boundary
+
+The implemented pipeline is:
+
+```text
+validated Simulation
+        -> immutable FlightResult
+        -> Mission.evaluate(...)
+        -> objective outcomes + score + stars
+        -> GameSession progression
+        -> Pygame presentation
+```
+
+Mission targets are presentation geometry in world metres. They never feed back into the simulation. Difficulty changes exposed controls, objectives, hints, and scoring only. There is no target steering, gravity/thrust/drag adjustment, position snapping, timestep change, or false terminal result.
 
 ## Shared force-observability contract
 
@@ -135,4 +178,4 @@ The direction preview is rendering-only and uses the exact configured radians. I
 
 ## Extension limits
 
-Prompt 05 adds an experiment interface over existing validated parameters, not a new physical effect or a run-comparison framework. It does not introduce variable mass, propellant depletion, motor-file import, motor selection/editing, wind, lift, atmosphere variation, experiment persistence/export, plots, plugins, databases, ECS, or networking. Later effects should be added one validated physical model at a time without changing the current ownership boundary silently.
+Prompt 06 adds evaluation and presentation above existing validated parameters, not a new physical effect or run-comparison framework. It does not introduce variable mass, propellant depletion, motor-file import, motor selection/editing, wind, lift, atmosphere variation, recovery/contact dynamics, persistence/export, 2.5D/3D, plots, plugins, databases, ECS, or networking. Later effects should be added one validated physical model at a time without changing the current ownership boundary silently.

@@ -8,6 +8,13 @@ import math
 import pygame
 
 from .config import SimulationConfig, Vector2
+from .game import GameSession, GameView
+from .missions import (
+    FlightResult,
+    Mission,
+    MissionEvaluation,
+    ObjectiveKind,
+)
 from .physics import ForceBreakdown
 from .propulsion import ThrustCurve
 from .setup import (
@@ -17,6 +24,7 @@ from .setup import (
     SetupParameter,
     setup_display_rows,
     setup_display_value,
+    setup_parameter_spec,
 )
 from .simulation import FlightPhase, Simulation
 
@@ -43,6 +51,9 @@ SETUP_ROW_Y_PX = {
     SetupParameter.GRAVITY: 415,
 }
 
+ALTITUDE_TARGET_X_MIN_M = 18.5
+ALTITUDE_TARGET_X_MAX_M = 19.7
+
 
 @dataclass(frozen=True, slots=True)
 class SetupControl:
@@ -66,6 +77,126 @@ class ThrustTimelineGeometry:
     cursor_time_s: float
     burnout_zero_point_px: tuple[int, int]
     terminal_sample_is_left_limit: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MissionTargetGeometry:
+    """Screen geometry produced only through the shared world transform."""
+
+    kind: ObjectiveKind
+    start_px: tuple[int, int]
+    end_px: tuple[int, int]
+    secondary_start_px: tuple[int, int] | None = None
+    secondary_end_px: tuple[int, int] | None = None
+
+
+def mission_target_geometry(
+    mission: Mission,
+    origin_px: tuple[float, float],
+    pixels_per_metre: float,
+) -> MissionTargetGeometry:
+    """Transform the first mission target from world metres to pixels."""
+
+    objective = mission.objectives[0]
+    if objective.kind is ObjectiveKind.GROUND_CONTACT_ZONE:
+        assert objective.upper is not None
+        start = Vector2(objective.lower, 0.0)
+        end = Vector2(objective.upper, 0.0)
+        return MissionTargetGeometry(
+            objective.kind,
+            world_to_screen(start, origin_px, pixels_per_metre),
+            world_to_screen(end, origin_px, pixels_per_metre),
+        )
+    start = Vector2(ALTITUDE_TARGET_X_MIN_M, objective.lower)
+    end = Vector2(ALTITUDE_TARGET_X_MAX_M, objective.lower)
+    secondary_start = None
+    secondary_end = None
+    if objective.kind is ObjectiveKind.APOGEE_BAND:
+        assert objective.upper is not None
+        secondary_start = world_to_screen(
+            Vector2(ALTITUDE_TARGET_X_MIN_M, objective.upper),
+            origin_px,
+            pixels_per_metre,
+        )
+        secondary_end = world_to_screen(
+            Vector2(ALTITUDE_TARGET_X_MAX_M, objective.upper),
+            origin_px,
+            pixels_per_metre,
+        )
+    return MissionTargetGeometry(
+        objective.kind,
+        world_to_screen(start, origin_px, pixels_per_metre),
+        world_to_screen(end, origin_px, pixels_per_metre),
+        secondary_start,
+        secondary_end,
+    )
+
+
+def mission_hud_rows(
+    mission: Mission, simulation: Simulation
+) -> tuple[str, ...]:
+    """Format live objective truth without predicting terminal outcomes."""
+
+    rows = [f"MISSION {mission.number}: {mission.title}", "OBJECTIVES"]
+    for objective in mission.objectives:
+        state = objective.live_passed(simulation)
+        marker = "[x]" if state is True else "[ ]" if state is False else "[...]"
+        rows.append(f"{marker} {objective.description}")
+    return tuple(rows)
+
+
+def mission_result_rows(
+    mission: Mission,
+    evaluation: MissionEvaluation,
+    result: FlightResult,
+) -> tuple[str, ...]:
+    """Format a result summary from evaluated mission-domain values."""
+
+    outcome = "MISSION COMPLETE" if evaluation.success else "MISSION NOT COMPLETE"
+    rows = [
+        outcome,
+        f"Mission {mission.number}: {mission.title}",
+        f"Stars: {evaluation.stars}/3    Score: {evaluation.score}",
+    ]
+    for objective in evaluation.objectives:
+        rows.extend(
+            (
+                f"{'PASS' if objective.passed else 'MISS'}: {objective.description}",
+                f"  Actual: {objective.actual}",
+                f"  {objective.feedback}",
+            )
+        )
+    for component in evaluation.components:
+        rows.append(f"{component.label}: +{component.points}")
+    rows.extend(
+        (
+            mission.score_rule.explanation,
+            "Performance points are clamped to 0-500 and rounded to an integer.",
+            "PHYSICS EXPLANATION",
+            mission.hint,
+            f"Outcome: {result.outcome.value.upper().replace('_', ' ')}",
+            f"Configured constant mass: {result.configured_mass_kg:.3f} kg",
+            f"Recorded apogee: {result.apogee_m:.3f} m",
+            (
+                "Ground-contact x: unavailable"
+                if result.landing_x_m is None
+                else f"Ground-contact x: {result.landing_x_m:.3f} m"
+            ),
+            (
+                "Modeled impact speed: unavailable"
+                if result.impact_speed_m_s is None
+                else f"Modeled impact speed: {result.impact_speed_m_s:.3f} m/s"
+            ),
+            f"Maximum recorded speed: {result.max_speed_m_s:.3f} m/s",
+            (
+                "Maximum recorded acceleration: "
+                f"{result.max_acceleration_m_s2:.3f} m/s^2"
+            ),
+            f"Maximum recorded drag: {result.max_drag_n:.3f} N",
+            f"Flight time: {result.flight_time_s:.3f} s",
+        )
+    )
+    return tuple(rows)
 
 
 def thrust_timeline_geometry(
@@ -304,7 +435,44 @@ class Renderer:
     def toggle_inspector(self) -> None:
         self.show_inspector = not self.show_inspector
 
-    def draw(self, surface: pygame.Surface, simulation: Simulation) -> None:
+    def draw(
+        self,
+        surface: pygame.Surface,
+        simulation: Simulation,
+        game: GameSession | None = None,
+    ) -> None:
+        """Draw Sandbox or the current Mission Mode view without mutation."""
+
+        if game is None or game.view is GameView.SANDBOX:
+            self._draw_simulation(surface, simulation)
+        elif game.view is GameView.MODE_SELECT:
+            self._draw_mode_select(surface)
+        elif game.view is GameView.MISSION_SELECT:
+            self._draw_mission_select(surface, game)
+        elif game.view is GameView.MISSION_BRIEF:
+            self._draw_mission_brief(surface, game)
+        elif game.view is GameView.MISSION_RESULTS:
+            self._draw_mission_results(surface, game)
+        else:
+            mission = game.current_mission
+            assert mission is not None
+            self._draw_simulation(
+                surface,
+                simulation,
+                mission=mission,
+            )
+            self._draw_mission_target(surface, mission)
+            self._draw_mission_hud(surface, mission, simulation)
+            if game.countdown_remaining_s is not None:
+                self._draw_countdown(surface, game.countdown_remaining_s)
+
+    def _draw_simulation(
+        self,
+        surface: pygame.Surface,
+        simulation: Simulation,
+        *,
+        mission: Mission | None = None,
+    ) -> None:
         surface.fill((12, 20, 36))
         pygame.draw.rect(
             surface,
@@ -336,7 +504,14 @@ class Renderer:
         self._draw_thrust_timeline(
             surface, simulation, forces.thrust_n.magnitude
         )
-        self._draw_setup_panel(surface, simulation)
+        self._draw_setup_panel(
+            surface,
+            simulation,
+            allowed_parameters=(
+                mission.allowed_setup_fields if mission is not None else None
+            ),
+            mission=mission,
+        )
         rocket_position = world_to_screen(
             simulation.state.position_m,
             self.origin_px,
@@ -362,7 +537,350 @@ class Renderer:
             )
             surface.blit(rendered, (self.world_width_px + 20, 22))
 
-    def setup_controls(self, simulation: Simulation) -> tuple[SetupControl, ...]:
+    def _draw_title(self, surface: pygame.Surface, title: str, subtitle: str) -> None:
+        surface.fill((12, 20, 36))
+        heading = self._heading_font.render(title, True, (245, 214, 96))
+        surface.blit(heading, heading.get_rect(center=(self.width_px // 2, 54)))
+        sub = self._font.render(subtitle, True, (182, 194, 211))
+        surface.blit(sub, sub.get_rect(center=(self.width_px // 2, 84)))
+
+    def _draw_mode_select(self, surface: pygame.Surface) -> None:
+        self._draw_title(
+            surface,
+            "ROCKETSIM",
+            "Choose open experimentation or an engineering mission.",
+        )
+        for control in (
+            SetupControl(
+                "sandbox_label",
+                pygame.Rect(190, 300, 360, 90),
+                "SANDBOX",
+                AppAction(AppActionKind.OPEN_SANDBOX),
+                True,
+            ),
+            SetupControl(
+                "missions_label",
+                pygame.Rect(650, 300, 360, 90),
+                "MISSIONS",
+                AppAction(AppActionKind.OPEN_MISSIONS),
+                True,
+            ),
+        ):
+            self._draw_button(surface, control)
+        descriptions = (
+            ("Configure any exposed value and investigate.", (370, 420)),
+            ("Meet physical objectives using the same simulation.", (830, 420)),
+        )
+        for text, center in descriptions:
+            rendered = self._small_font.render(text, True, (213, 222, 236))
+            surface.blit(rendered, rendered.get_rect(center=center))
+
+    def _draw_mission_select(
+        self, surface: pygame.Surface, game: GameSession
+    ) -> None:
+        self._draw_title(
+            surface,
+            "MISSION SELECT",
+            "Complete a mission to unlock the next. Progress lasts for this session.",
+        )
+        controls = {c.identifier: c for c in self._screen_controls(game)}
+        for index, mission in enumerate(game.missions):
+            control = controls[f"mission.{index}"]
+            self._draw_button(surface, control)
+            best = game.best.get(mission.id)
+            status = (
+                f"best {best.stars}/3 stars, {best.score} points"
+                if best is not None
+                else "unlocked" if control.enabled else "locked"
+            )
+            detail = f"{mission.description}  |  {mission.concept}  |  {status}"
+            rendered = self._small_font.render(
+                detail,
+                True,
+                (213, 222, 236) if control.enabled else (120, 128, 142),
+            )
+            surface.blit(rendered, (control.rect.left + 18, control.rect.top + 51))
+        self._draw_button(surface, controls["back_modes"])
+
+    def _draw_mission_brief(
+        self, surface: pygame.Surface, game: GameSession
+    ) -> None:
+        mission = game.current_mission
+        assert mission is not None
+        self._draw_title(
+            surface,
+            f"MISSION {mission.number}: {mission.title}",
+            mission.concept,
+        )
+        sections = (
+            ("OBJECTIVE", tuple(o.description for o in mission.objectives)),
+            ("CONSTRAINTS", mission.constraints),
+            (
+                "YOU MAY CHANGE",
+                tuple(
+                    setup_parameter_spec(parameter).label
+                    for parameter in sorted(
+                        mission.allowed_setup_fields, key=lambda item: item.value
+                    )
+                ),
+            ),
+            ("PHYSICS HINT", (mission.hint,)),
+            (
+                "SCORING",
+                (
+                    "Mandatory objective: 500 points; physical performance: up to 500.",
+                    mission.score_rule.explanation,
+                    "1 star >= 500, 2 stars >= 750, 3 stars >= 900; failure earns 0.",
+                ),
+            ),
+        )
+        y = 122
+        for heading, lines in sections:
+            surface.blit(
+                self._font.render(heading, True, (142, 203, 255)),
+                (115, y),
+            )
+            y += 27
+            for line in lines:
+                for wrapped in self._wrap_text(line, 105):
+                    surface.blit(
+                        self._small_font.render(wrapped, True, (232, 238, 247)),
+                        (145, y),
+                    )
+                    y += 20
+            y += 10
+        for control in self._screen_controls(game):
+            self._draw_button(surface, control)
+
+    def _draw_mission_results(
+        self, surface: pygame.Surface, game: GameSession
+    ) -> None:
+        mission = game.current_mission
+        evaluation = game.evaluation
+        result = game.result
+        assert mission is not None and evaluation is not None and result is not None
+        self._draw_title(
+            surface,
+            "FLIGHT RESULTS",
+            "The score evaluates the production run; it never changes the physics.",
+        )
+        rows = mission_result_rows(mission, evaluation, result)
+        y = 115
+        for index, row in enumerate(rows):
+            color = (
+                (102, 221, 154)
+                if "COMPLETE" in row or row.startswith("PASS")
+                else (238, 168, 108)
+                if "NOT COMPLETE" in row or row.startswith("MISS")
+                else (142, 203, 255)
+                if row == "PHYSICS EXPLANATION"
+                else (232, 238, 247)
+            )
+            font = self._heading_font if index == 0 else self._font if index < 3 else self._small_font
+            for line in self._wrap_text(row, 125):
+                surface.blit(font.render(line, True, color), (165, y))
+                y += 31 if index < 3 else 20
+        for control in self._screen_controls(game):
+            self._draw_button(surface, control)
+
+    def _draw_mission_target(
+        self, surface: pygame.Surface, mission: Mission
+    ) -> None:
+        geometry = mission_target_geometry(
+            mission, self.origin_px, self.pixels_per_metre
+        )
+        color = (102, 221, 154)
+        if geometry.kind is ObjectiveKind.GROUND_CONTACT_ZONE:
+            left = min(geometry.start_px[0], geometry.end_px[0])
+            width = max(4, abs(geometry.end_px[0] - geometry.start_px[0]))
+            pygame.draw.rect(
+                surface,
+                (47, 108, 87),
+                pygame.Rect(left, self.ground_y_px - 8, width, 16),
+            )
+            pygame.draw.line(surface, color, geometry.start_px, geometry.end_px, 4)
+        else:
+            pygame.draw.line(surface, color, geometry.start_px, geometry.end_px, 3)
+            if (
+                geometry.secondary_start_px is not None
+                and geometry.secondary_end_px is not None
+            ):
+                pygame.draw.line(
+                    surface,
+                    color,
+                    geometry.secondary_start_px,
+                    geometry.secondary_end_px,
+                    3,
+                )
+                pygame.draw.line(
+                    surface,
+                    color,
+                    geometry.start_px,
+                    geometry.secondary_start_px,
+                    1,
+                )
+                pygame.draw.line(
+                    surface,
+                    color,
+                    geometry.end_px,
+                    geometry.secondary_end_px,
+                    1,
+                )
+
+    def _draw_mission_hud(
+        self,
+        surface: pygame.Surface,
+        mission: Mission,
+        simulation: Simulation,
+    ) -> None:
+        panel = pygame.Rect(412, 282, 366, 108)
+        pygame.draw.rect(surface, (18, 31, 53), panel, border_radius=6)
+        pygame.draw.rect(surface, (78, 98, 126), panel, 1, border_radius=6)
+        for index, row in enumerate(mission_hud_rows(mission, simulation)):
+            color = (245, 214, 96) if index == 0 else (232, 238, 247)
+            surface.blit(
+                self._small_font.render(row, True, color),
+                (panel.left + 10, panel.top + 10 + 22 * index),
+            )
+
+    def _draw_countdown(
+        self, surface: pygame.Surface, remaining_s: float
+    ) -> None:
+        number = max(1, math.ceil(remaining_s))
+        rendered = pygame.font.Font(None, 96).render(
+            str(number), True, (245, 214, 96)
+        )
+        surface.blit(rendered, rendered.get_rect(center=(600, 360)))
+
+    def _wrap_text(self, text: str, maximum_characters: int) -> tuple[str, ...]:
+        words = text.split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and len(candidate) > maximum_characters:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        return tuple(lines)
+
+    def _screen_controls(self, game: GameSession) -> tuple[SetupControl, ...]:
+        """Return visible controls for non-flight game views."""
+
+        if game.view is GameView.MODE_SELECT:
+            return (
+                SetupControl(
+                    "sandbox",
+                    pygame.Rect(190, 300, 360, 90),
+                    "SANDBOX",
+                    AppAction(AppActionKind.OPEN_SANDBOX),
+                    True,
+                ),
+                SetupControl(
+                    "missions",
+                    pygame.Rect(650, 300, 360, 90),
+                    "MISSIONS",
+                    AppAction(AppActionKind.OPEN_MISSIONS),
+                    True,
+                ),
+            )
+        if game.view is GameView.MISSION_SELECT:
+            controls: list[SetupControl] = []
+            for index, mission in enumerate(game.missions):
+                controls.append(
+                    SetupControl(
+                        f"mission.{index}",
+                        pygame.Rect(130, 105 + 104 * index, 940, 78),
+                        f"MISSION {mission.number}: {mission.title}",
+                        AppAction(
+                            AppActionKind.SELECT_MISSION,
+                            mission_index=index,
+                        ),
+                        index < game.unlocked_count,
+                    )
+                )
+            controls.append(
+                SetupControl(
+                    "back_modes",
+                    pygame.Rect(20, 665, 170, 36),
+                    "BACK TO MODES",
+                    AppAction(AppActionKind.BACK_TO_MODES),
+                    True,
+                )
+            )
+            return tuple(controls)
+        if game.view is GameView.MISSION_BRIEF:
+            return (
+                SetupControl(
+                    "begin_mission",
+                    pygame.Rect(430, 640, 340, 44),
+                    "CONFIGURE MISSION",
+                    AppAction(AppActionKind.BEGIN_MISSION),
+                    True,
+                ),
+                SetupControl(
+                    "back_missions",
+                    pygame.Rect(25, 640, 210, 44),
+                    "MISSION SELECT",
+                    AppAction(AppActionKind.BACK_TO_MISSIONS),
+                    True,
+                ),
+                SetupControl(
+                    "brief_sandbox",
+                    pygame.Rect(965, 640, 210, 44),
+                    "SANDBOX",
+                    AppAction(AppActionKind.OPEN_SANDBOX),
+                    True,
+                ),
+            )
+        if game.view is GameView.MISSION_RESULTS:
+            evaluation = game.evaluation
+            next_enabled = bool(
+                evaluation is not None
+                and evaluation.success
+                and game.current_mission_index is not None
+                and game.current_mission_index + 1 < len(game.missions)
+            )
+            return (
+                SetupControl(
+                    "retry",
+                    pygame.Rect(40, 650, 200, 42),
+                    "RETRY",
+                    AppAction(AppActionKind.RETRY_MISSION),
+                    True,
+                ),
+                SetupControl(
+                    "next",
+                    pygame.Rect(260, 650, 200, 42),
+                    "NEXT MISSION",
+                    AppAction(AppActionKind.NEXT_MISSION),
+                    next_enabled,
+                ),
+                SetupControl(
+                    "results_missions",
+                    pygame.Rect(740, 650, 200, 42),
+                    "MISSION SELECT",
+                    AppAction(AppActionKind.BACK_TO_MISSIONS),
+                    True,
+                ),
+                SetupControl(
+                    "results_sandbox",
+                    pygame.Rect(960, 650, 200, 42),
+                    "SANDBOX",
+                    AppAction(AppActionKind.OPEN_SANDBOX),
+                    True,
+                ),
+            )
+        return ()
+
+    def setup_controls(
+        self,
+        simulation: Simulation,
+        allowed_parameters: frozenset[SetupParameter] | None = None,
+    ) -> tuple[SetupControl, ...]:
         """Return the exact visible/clickable setup and flight controls."""
 
         is_ready = simulation.state.phase is FlightPhase.READY
@@ -381,7 +899,12 @@ class Renderer:
                             spec.parameter,
                             -1,
                         ),
-                        is_ready and current > spec.minimum,
+                        is_ready
+                        and (
+                            allowed_parameters is None
+                            or spec.parameter in allowed_parameters
+                        )
+                        and current > spec.minimum,
                     ),
                     SetupControl(
                         f"{spec.parameter.value}.increase",
@@ -392,7 +915,12 @@ class Renderer:
                             spec.parameter,
                             1,
                         ),
-                        is_ready and current < spec.maximum,
+                        is_ready
+                        and (
+                            allowed_parameters is None
+                            or spec.parameter in allowed_parameters
+                        )
+                        and current < spec.maximum,
                     ),
                 )
             )
@@ -434,29 +962,62 @@ class Renderer:
         return tuple(controls)
 
     def action_at(
-        self, position_px: tuple[int, int], simulation: Simulation
+        self,
+        position_px: tuple[int, int],
+        simulation: Simulation,
+        game: GameSession | None = None,
     ) -> AppAction | None:
         """Return the enabled action under a mouse position without mutation."""
 
-        for control in self.setup_controls(simulation):
+        if game is not None and game.view not in {
+            GameView.SANDBOX,
+            GameView.MISSION_FLIGHT,
+        }:
+            controls = self._screen_controls(game)
+        else:
+            controls = self.setup_controls(
+                simulation,
+                (
+                    game.current_mission.allowed_setup_fields
+                    if game is not None
+                    and game.view is GameView.MISSION_FLIGHT
+                    and game.current_mission is not None
+                    else None
+                ),
+            )
+        for control in controls:
             if control.enabled and control.rect.collidepoint(position_px):
                 return control.action
         return None
 
     def _draw_setup_panel(
-        self, surface: pygame.Surface, simulation: Simulation
+        self,
+        surface: pygame.Surface,
+        simulation: Simulation,
+        allowed_parameters: frozenset[SetupParameter] | None = None,
+        mission: Mission | None = None,
     ) -> None:
         panel = SETUP_PANEL_RECT
         pygame.draw.rect(surface, (18, 31, 53), panel, border_radius=6)
         pygame.draw.rect(surface, (78, 98, 126), panel, 1, border_radius=6)
 
         heading = self._heading_font.render(
-            "PRE-LAUNCH LAB", True, (245, 214, 96)
+            (
+                f"MISSION {mission.number} CONFIGURATION"
+                if mission is not None
+                else "PRE-LAUNCH LAB"
+            ),
+            True,
+            (245, 214, 96),
         )
         surface.blit(heading, (30, 101))
         ready = simulation.state.phase is FlightPhase.READY
         status = (
-            "READY TO CONFIGURE"
+            (
+                "YELLOW = YOU MAY CHANGE | [FIXED] locked"
+                if mission is not None
+                else "READY TO CONFIGURE"
+            )
             if ready
             else "SETUP LOCKED - Reset flight to modify setup."
         )
@@ -477,16 +1038,20 @@ class Renderer:
             )
             surface.blit(rendered, (30, heading_y))
 
-        controls = self.setup_controls(simulation)
+        controls = self.setup_controls(simulation, allowed_parameters)
         controls_by_id = {control.identifier: control for control in controls}
         for row in setup_display_rows(simulation.config):
             row_y = SETUP_ROW_Y_PX[row.parameter]
+            editable = allowed_parameters is None or row.parameter in allowed_parameters
+            label = row.label + (" [FIXED]" if mission is not None and not editable else "")
             surface.blit(
-                self._small_font.render(row.label, True, (232, 238, 247)),
+                self._small_font.render(label, True, (232, 238, 247)),
                 (30, row_y + 5),
             )
             value_surface = self._small_font.render(
-                row.value, True, (245, 214, 96) if ready else (157, 166, 181)
+                row.value,
+                True,
+                (245, 214, 96) if ready and editable else (157, 166, 181),
             )
             value_rect = value_surface.get_rect(center=(286, row_y + 13))
             surface.blit(value_surface, value_rect)
@@ -510,7 +1075,16 @@ class Renderer:
             )
 
         for identifier in ("primary", "reset_flight", "restore_defaults"):
-            self._draw_button(surface, controls_by_id[identifier])
+            control = controls_by_id[identifier]
+            if mission is not None and identifier == "restore_defaults":
+                control = SetupControl(
+                    control.identifier,
+                    control.rect,
+                    "MISSION DEFAULTS",
+                    control.action,
+                    control.enabled,
+                )
+            self._draw_button(surface, control)
 
     def _draw_button(
         self, surface: pygame.Surface, control: SetupControl

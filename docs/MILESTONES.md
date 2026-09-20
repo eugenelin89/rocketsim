@@ -142,6 +142,37 @@ Validation:
 
 The educational bounds deliberately include valid no-liftoff and limiting cases. They are interface choices rather than restrictions on `SimulationConfig` or claims about nature. No automatic run comparison, history, plotting, export, or Prompt 06 physics is included.
 
+## Milestone 5 — Mission Mode and flight results
+
+Status: complete in Prompt 06.
+
+Physics:
+
+- no new force, equation, integration method, event rule, motor behavior, or hidden assistance
+- exact Sandbox/Mission use of the same authoritative `Simulation`
+- mission restrictions select among existing validated configuration values only
+
+Features:
+
+- Sandbox/Missions mode choice and five progressive engineering missions
+- immutable Pygame-independent terminal `FlightResult` with recorded numerical metrics
+- explicit objectives, transparent score components, 1–3 stars, and in-memory unlock/best-score progression
+- mission brief, allowed/fixed setup display, presentation-only countdown, live objective HUD, world-coordinate targets, and terminal results
+- retry preserving allowed selections, Mission Defaults restoring mission baselines, and results navigation
+- Living Course Lesson 11 on the engineering mission loop
+
+Validation:
+
+- terminal-result provenance, exceptional-outcome, metric, and extraction-nonmutation tests
+- exact objective/scoring boundaries and captured-config scoring
+- direct-action restriction-bypass tests preserving motor, timestep, and fixed mission values
+- at least one successful and failing production configuration for every mission
+- exact Sandbox/Mission state and trajectory equivalence from ignition onward
+- countdown non-advancement, one-time finalization, retry/progression, target/HUD/result sourcing, and render nonmutation
+- complete regression suite, bounded dummy-SDL run, and six production-frame visual inspection
+
+The mission score evaluates production output; it never changes the simulated flight. Ground-contact targets do not model recovery, structural survival, bounce, or safety. Progress is not persisted to disk.
+
 ## Approved product direction — mission game and staged 3D evolution
 
 Decision 09 establishes a game layer that evaluates validated simulation outcomes without secretly altering the physics.

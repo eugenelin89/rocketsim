@@ -80,6 +80,8 @@ def test_core_modules_do_not_depend_on_pygame() -> None:
         "physics.py",
         "propulsion.py",
         "simulation.py",
+        "missions.py",
+        "game.py",
     ):
         tree = ast.parse((package_root / module_name).read_text())
         imported_roots = {

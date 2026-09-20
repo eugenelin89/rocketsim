@@ -113,6 +113,15 @@ class AppActionKind(str, Enum):
     TOGGLE_FORCE_VECTORS = "toggle_force_vectors"
     TOGGLE_INSPECTOR = "toggle_inspector"
     ADJUST_SETUP = "adjust_setup"
+    OPEN_SANDBOX = "open_sandbox"
+    OPEN_MISSIONS = "open_missions"
+    SELECT_MISSION = "select_mission"
+    BEGIN_MISSION = "begin_mission"
+    BACK_TO_MODES = "back_to_modes"
+    BACK_TO_MISSIONS = "back_to_missions"
+    RETRY_MISSION = "retry_mission"
+    NEXT_MISSION = "next_mission"
+    RESET_MISSION_DEFAULTS = "reset_mission_defaults"
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,16 +131,33 @@ class AppAction:
     kind: AppActionKind
     parameter: SetupParameter | None = None
     direction: int = 0
+    mission_index: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind is AppActionKind.ADJUST_SETUP:
-            if self.parameter is None or self.direction not in (-1, 1):
+            if (
+                self.parameter is None
+                or self.direction not in (-1, 1)
+                or self.mission_index is not None
+            ):
                 raise ValueError(
                     "setup adjustment requires a parameter and +/-1 direction"
                 )
-        elif self.parameter is not None or self.direction != 0:
+        elif self.kind is AppActionKind.SELECT_MISSION:
+            if (
+                self.mission_index is None
+                or self.mission_index < 0
+                or self.parameter is not None
+                or self.direction != 0
+            ):
+                raise ValueError("mission selection requires a non-negative index")
+        elif (
+            self.parameter is not None
+            or self.direction != 0
+            or self.mission_index is not None
+        ):
             raise ValueError(
-                "only setup-adjustment actions carry a parameter or direction"
+                "this action does not carry a parameter, direction, or mission index"
             )
 
 

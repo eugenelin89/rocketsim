@@ -2,7 +2,7 @@
 
 ## Purpose and current milestone
 
-RocketSim is a scientifically validated, interactive rocketry-learning simulator whose educational course evolves with the implemented model. It remains a trustworthy, understandable 2D learning model rather than an engineering-grade launch predictor. Prompt 05 turns the existing validated parameters into a READY-only pre-launch laboratory and establishes a context-efficient specialist-review workflow; it adds no physical effect.
+RocketSim is a scientifically validated, interactive rocketry-learning simulator whose educational course evolves with the implemented model. It remains a trustworthy, understandable 2D learning model rather than an engineering-grade launch predictor. Prompt 06 adds Sandbox/Mission mode choice, completed-flight results, objectives, deterministic scoring/stars, target visualization, retry, and in-memory progression above the unchanged validated Prompt 05 simulation.
 
 ## Implemented model
 
@@ -26,12 +26,14 @@ src/rocket_sim/setup.py        typed actions and educational config adjustments
 src/rocket_sim/propulsion.py   sampled curve, interpolation, and impulse metrics
 src/rocket_sim/physics.py      thrust, gravity, drag, force breakdown, and Euler segment
 src/rocket_sim/simulation.py   lifecycle, fixed outer clock, knot segments, and history
-src/rocket_sim/rendering.py    setup geometry, force arrows, Inspector, and timeline
-src/rocket_sim/app.py          Pygame loop and shared keyboard/mouse action dispatch
+src/rocket_sim/missions.py     terminal result metrics and explicit mission evaluation
+src/rocket_sim/game.py         Pygame-independent view/progression/session state
+src/rocket_sim/rendering.py    setup, mission, force, Inspector, and timeline presentation
+src/rocket_sim/app.py          Pygame loop and shared keyboard/mouse/game action dispatch
 src/rocket_sim/__main__.py     python -m rocket_sim entry point
 ```
 
-The physics and setup modules do not import Pygame. Rendering consumes `Simulation.current_forces`, the same immutable `ForceBreakdown` calculated by the production physics layer. Display scaling, hit-testing, and visibility toggles cannot alter physical values or state. `Simulation.config` is getter-only; whole-config replacement is accepted only in READY and atomically rebuilds the initial state and run bookkeeping.
+The physics, setup, missions, and game-session modules do not import Pygame. Rendering consumes `Simulation.current_forces`, the same immutable `ForceBreakdown` calculated by the production physics layer. Display scaling, target geometry, hit-testing, scoring, and visibility toggles cannot alter physical values or state. `Simulation.config` is getter-only; whole-config replacement is accepted only in READY and atomically rebuilds the initial state and run bookkeeping.
 
 ## Numerical and event semantics
 
@@ -51,12 +53,14 @@ The Pygame application shows a pre-launch setup panel, powered and coast traject
 
 The setup panel exposes mass, fixed thrust direction in degrees, `Cd`, effective reference area, constant air density, and constant gravity. Edits and Restore Defaults are READY-only. The sampled motor and timestep are read-only. The fixed-direction guide uses the configured radians and is explicitly not attitude. Keyboard and mouse use one typed-action dispatcher: SPACE or the primary button launches/pauses/resumes; R or Reset Flight rebuilds READY run state while preserving setup; Restore Defaults creates an exact production default config; RIGHT, F, I, and ESC retain their established behavior.
 
+Sandbox preserves that complete laboratory. Mission Mode adds five explicit missions with a brief, allowed-control allow-list, fixed mission values, live objective state, world-coordinate target, and terminal results. `FlightResult` captures the completed run's immutable configuration and recorded numerical metrics. `NO_LIFTOFF` has no fabricated ground-contact position or impact speed. Scores are 500 points for mandatory completion plus up to 500 transparent performance points; stars require success and use 500/750/900 thresholds. Retry preserves allowed choices, Mission Defaults restores the mission baseline, and sequential progression is memory-only.
+
 ## Validation status
 
-The suite preserves Prompts 02–04 and adds literal UI-label-to-field wiring, complete READY-state rebuilding, non-READY lockout, reset/default distinction, motor/unexposed-field preservation, mouse/keyboard common dispatch, independent production-force oracles, bounds/reversibility, setup-display sourcing, angle-preview geometry, rendering non-mutation, selected-config deterministic rerun, and bounded SDL evidence.
+The suite preserves Prompts 02–05 and adds terminal result provenance/nonmutation, independently checked recorded metrics, exact objective and scoring boundaries, mission restriction bypass checks, per-mission successful/failing production runs, countdown non-advancement, exact Sandbox/Mission post-ignition equivalence, state-machine/retry/progression checks, target/HUD/result sourcing, complete-view rendering nonmutation, and bounded SDL evidence.
 
 ## Current limits
 
-Each selected physical scalar is constant during one run. UI bounds are pedagogical controls, not physical limits. Some valid choices produce NO LIFTOFF in the no-pad/no-rail boundary model, and zero gravity can produce a flight that never returns. There is no wind, altitude-varying atmosphere, lift, compressibility, Mach/Reynolds dependence, variable mass, propellant depletion, measured motor import or editing, pad/rail contact, recovery, collision dynamics, rotation, stability, guidance, control, automatic run comparison, plotting, experiment export, calibration, or uncertainty model. Semi-implicit Euler is explicit with respect to drag and can become unstable for sufficiently large timestep or speed; no artificial clamp conceals that limitation.
+Each selected physical scalar is constant during one run. UI bounds are pedagogical controls, not physical limits. Some valid choices produce NO LIFTOFF in the no-pad/no-rail boundary model, and zero gravity can produce a flight that never returns. There is no wind, altitude-varying atmosphere, lift, compressibility, Mach/Reynolds dependence, variable mass, propellant depletion, measured motor import or editing, pad/rail contact, recovery, collision dynamics, rotation, stability, guidance, control, automatic run comparison, disk persistence, networking, 2.5D/3D, plotting, experiment export, calibration, or uncertainty model. Semi-implicit Euler is explicit with respect to drag and can become unstable for sufficiently large timestep or speed; no artificial clamp conceals that limitation.
 
-The point-mass result is not equivalent to 3D flight dynamics and is not an engineering or safety prediction. Prompt 06 has not begun.
+The point-mass result is not equivalent to 3D flight dynamics and is not an engineering or safety prediction. A mission's “landing” is the existing interpolated first descending ground contact, not recovery, bounce, structural survival, or a real-world safety assessment.

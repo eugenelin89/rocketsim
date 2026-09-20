@@ -161,6 +161,10 @@ Building Mission Mode before true 3D has several advantages:
 - A 2.5D/3D presentation milestone should come only after the mission/game loop is proven useful.
 - Full 3D flight dynamics remain a substantially later scientific undertaking requiring explicit approval.
 
+## Prompt 06 implementation clarification
+
+Prompt 06 implements the first mission layer described here. The existing `mass_kg` remains one total constant vehicle mass; RocketSim still has no separate payload, dry-mass, or propellant-mass model. Therefore the shipped Heavy Lift mission and score use “configured constant mass,” not the earlier candidate shorthand “payload.” A future true payload objective requires an explicit approved mass model.
+
 ## Superseding decision
 
 None.

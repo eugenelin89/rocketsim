@@ -1,12 +1,12 @@
 # Pygame Rocket Physics Simulator
 
-RocketSim is a scientifically inspectable 2D model-rocket flight simulator and interactive rocketry-learning laboratory built with Python and Pygame. Its current milestone models a constant-mass point rocket under gravity, a sampled time-varying thrust curve, and constant-property quadratic aerodynamic drag in still air. A fixed outer physics timestep remains independent of display FPS.
+RocketSim is a scientifically inspectable 2D model-rocket flight simulator, interactive laboratory, and mission-based engineering game built with Python and Pygame. Its current milestone models a constant-mass point rocket under gravity, a sampled time-varying thrust curve, and constant-property quadratic aerodynamic drag in still air. A fixed outer physics timestep remains independent of display FPS.
 
 Start with the [Living Rocketry Course](docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md) to learn the implemented physics through prediction, observation, and hands-on simulator experiments.
 
 ## Current status
 
-Milestone 4 is implemented. The runnable application is an interactive pre-launch laboratory with READY-only setup controls, mouse Launch/Pause/Resume and Reset actions, a Physics Inspector, force-vector overlay, and motor thrust timeline. A Pygame-independent physics core remains the sole owner of configuration, force calculations, integration, event transitions, and history.
+Milestone 5 is implemented. The runnable application opens with a choice between the existing **Sandbox** laboratory and **Missions**. Mission Mode adds five progressive engineering challenges, world-coordinate targets, live objective status, deterministic scoring/stars, terminal flight results, retry, and in-memory progression. A Pygame-independent physics core remains the sole owner of configuration, force calculations, integration, event transitions, and history; the game layer only observes completed production runs.
 
 Implemented physics:
 
@@ -43,7 +43,9 @@ conda run -n rocketsim python -m pytest
 conda run -n rocketsim python -m rocket_sim
 ```
 
-The pre-launch panel edits mass, fixed thrust direction (shown in degrees), `Cd`, effective reference area, constant air density, and constant gravity. It rebuilds an immutable validated `SimulationConfig` only while READY. The configured sampled motor/impulse and `physics_dt_s` are shown read-only. Parameters are selected between runs and remain constant throughout each run.
+Choose **Sandbox** to use the unrestricted Prompt 05 laboratory. Its pre-launch panel edits mass, fixed thrust direction (shown in degrees), `Cd`, effective reference area, constant air density, and constant gravity. It rebuilds an immutable validated `SimulationConfig` only while READY. The configured sampled motor/impulse and `physics_dt_s` are shown read-only. Parameters are selected between runs and remain constant throughout each run.
+
+Choose **Missions** for First Flight, Precision Landing, Heavy Lift Challenge, Aerodynamic Challenge, and Environmental Challenge. Each mission shows its objective, fixed constraints, allowed control, physics hint, and score rule before configuration. Mission defaults and restrictions still use the same `SimulationConfig`; the motor and timestep remain fixed. Retry preserves the allowed selection, while **Mission Defaults** restores that mission's baseline. Progress and best scores last only for the current app session.
 
 Controls:
 
@@ -65,7 +67,7 @@ The default vertical configuration uses a `1 kg` rocket and begins at `12 N`, ab
 
 ```text
 .codex/agents/         persistent read-only specialist reviewer definitions
-src/rocket_sim/        setup, configuration, physics, lifecycle, rendering, and app code
+src/rocket_sim/        setup, configuration, physics, lifecycle, missions, rendering, and app code
 tests/                 headless physics, numerical, lifecycle, and rendering tests
 docs/learning/         learner-facing Living Rocketry Course
 docs/product/          current implementation understanding

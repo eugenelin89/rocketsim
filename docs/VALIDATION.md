@@ -284,6 +284,52 @@ After targeted learning/test review corrections and selective resolution review,
 211 passed
 ```
 
+## Prompt 06 Mission Mode evidence
+
+Prompt 06 changes no physical equation or numerical method. Its central risk is that a visually convincing game could evaluate stale/approximate data, bypass fixed mission constraints, or alter a production run. Validation therefore crosses the completed-run, configuration, game-session, application-event, and rendering seams.
+
+`FlightResult` tests establish that extraction:
+
+- rejects READY, live, and paused incomplete simulations;
+- captures the exact immutable configuration belonging to the completed run;
+- distinguishes post-liftoff `LANDED` from terminal `NO_LIFTOFF`;
+- leaves ground-contact position and impact speed unavailable for `NO_LIFTOFF` rather than zero-filling them;
+- obtains apogee, maximum speed, maximum acceleration, and maximum drag from recorded production states;
+- matches an independent literal `0.5 rho Cd A speed^2` maximum-drag oracle; and
+- leaves configuration identity, state, trajectory, accumulator, step count, lifecycle flags, forces, and delivered impulse unchanged.
+
+Objective tests use inclusive boundaries and adjacent `math.nextafter` values. Evaluation consumes only the result's captured configuration. Every successful mission receives 500 mandatory-objective points plus 0–500 physical-performance points; failed mandatory objectives receive zero. Stars require success and use inclusive totals of 500, 750, and 900 points.
+
+Representative production reachability evidence is:
+
+| mission | successful allowed setting and result | failing allowed setting and result |
+| --- | --- | --- |
+| First Flight | `m=1.0 kg`: apogee `8.1031495 m`, score `513` | `m=1.1 kg`: apogee `6.1481031 m` |
+| Precision Landing | `theta=60 deg`: contact `x=18.1176548 m`, score `985` | `theta=55 deg`: contact `x=19.1239115 m` |
+| Heavy Lift | `m=1.3 kg`: apogee `3.5667906 m`, score `1000` | `m=1.4 kg`: `NO_LIFTOFF` |
+| Aerodynamic Challenge | `Cd=0.60`: contact `x=14.1232880 m`, score `942` | `Cd=1.00`: contact `x=13.7604330 m` |
+| Environmental Challenge | `m=1.2 kg`, fixed `g=3.71`: apogee `21.2114726 m`, score `904` | `m=1.0 kg`: apogee `30.2825187 m` |
+
+These are deterministic results at the documented `0.01 s` timestep, not exact continuous trajectories or real-flight predictions. “Heavy Lift” is total constant vehicle mass, not payload. Ground contact does not establish recovery or survivability.
+
+The physics-integrity regression launches a Sandbox `Simulation` and Mission `GameSession.simulation` with the same angled, active-drag configuration. After the presentation-only countdown, identical elapsed-time partitions produce exactly equal configuration, state, complete trajectory, step count, force breakdown, and delivered impulse, with equal accumulator residue. Countdown-only elapsed time leaves state, trajectory, accumulator, and step count unchanged.
+
+Application and rendering evidence covers direct crafted disallowed actions as well as visible hitboxes, exact preservation of the motor/timestep/initial state, mission defaults versus retry, legal view transitions, sequential unlocks, best-score retention, one-time result finalization, terminal-only contact objectives, shared `world_to_screen` target conversion, result/HUD data sourcing, and repeated draw nonmutation across selection, brief, configure/live, success, and failure views.
+
+Six production-rendered `1200x720` frames were visually inspected: mission selection, brief, mission configuration, active-flight HUD/target, successful result, and failed result. Text, fixed/editable distinction, target highlighting, physical metrics, score components, navigation, and the existing Inspector/timeline remained readable without changing simulation state.
+
+The focused Prompt 06 mission/setup/rendering group reports:
+
+```text
+113 passed
+```
+
+The final complete Prompt 06 implementation suite reports:
+
+```text
+261 passed
+```
+
 ## Full validation procedure
 
 Before a completed implementation is committed and pushed:
@@ -302,6 +348,7 @@ git diff --check
 Focused aerodynamic, analytical, convergence, integration, lifecycle, accumulator, and rendering tests are also run separately.
 Focused propulsion unit, propulsion integration, sampled-thrust convergence, FPS/reset, and timeline/Inspector tests are also run separately.
 Focused Prompt 05 setup, simulation lifecycle, application-event, and rendering tests are run separately before the full regression suite.
+Focused Prompt 06 result, mission evaluation, restriction, game-session, target/HUD/result, and rendering tests are run separately before the full regression suite.
 
 ## Interpretation limits
 

@@ -54,6 +54,8 @@ Before launch, READY deliberately displays inactive zero forces and zero stored 
 
 ### Controls
 
+The app first asks you to choose **Sandbox** or **Missions**. Lessons 1–10 use Sandbox, where all six educational setup controls are available. Lesson 11 introduces Mission Mode.
+
 ```text
 SPACE  launch; pause or resume a live flight (same as the primary mouse button)
 RIGHT  advance one outer physics step only while a live flight is paused
@@ -63,7 +65,7 @@ I      show or hide the Physics Inspector
 ESC    exit
 ```
 
-The PRE-LAUNCH LAB panel is active only in READY. Its `-` and `+` controls select mass, fixed thrust direction, `Cd`, reference area, constant air density, and constant gravity. The large mouse button performs the same Launch/Pause/Resume action as `SPACE`. **Reset Flight** clears flight state and trajectory but preserves those selected values. **Restore Defaults** is a different READY-only action that restores the exact production defaults. The panel reports the current motor/impulse and `Physics dt`, but both are read-only.
+Sandbox's PRE-LAUNCH LAB panel is active only in READY. Its `-` and `+` controls select mass, fixed thrust direction, `Cd`, reference area, constant air density, and constant gravity. The large mouse button performs the same Launch/Pause/Resume action as `SPACE`. **Reset Flight** clears flight state and trajectory but preserves those selected values. **Restore Defaults** is a different READY-only action that restores the exact production defaults. The panel reports the current motor/impulse and `Physics dt`, but both are read-only.
 
 After launch, physical setup controls lock because changing them would be an unmodeled intervention during flight. Reset Flight unlocks them. `F` and `I` change presentation only. `RIGHT` does not act while READY, while running, or after landing.
 
@@ -743,7 +745,7 @@ The last equality uses `m=1 kg`, constant mass, vertical thrust, zero gravity, a
 
 ---
 
-## 10. Designing Controlled Experiments with RocketSim
+## 10. Designing Controlled Experiments in Sandbox
 
 ### What are we trying to understand?
 
@@ -765,7 +767,7 @@ OBSERVE  Record Inspector values and visible outcomes.
 EXPLAIN  Connect the difference to an implemented equation.
 ```
 
-RocketSim has no automatic comparison history. Write each run's settings and observations before Reset Flight clears the trajectory. Reset Flight preserves your selected values for a repeat; Restore Defaults recovers the common baseline before a new experiment.
+Sandbox has no automatic comparison history. Write each run's settings and observations before Reset Flight clears the trajectory. Reset Flight preserves your selected values for a repeat; Restore Defaults recovers the common baseline before a new experiment.
 
 ### What the six controls mean
 
@@ -894,6 +896,112 @@ At `60 deg`, some of the same thrust magnitude builds horizontal momentum, while
 6. Why are setup controls locked during a paused flight?
 7. Which action repeats a selected experiment, and which recovers its baseline defaults?
 8. Why are NO LIFTOFF and non-returning zero-gravity coast valid modeled outcomes but not complete real launch predictions?
+
+---
+
+## 11. Engineering Missions: Predict, Test, Explain, Iterate
+
+### What are we trying to understand?
+
+How can a constrained objective turn a controlled experiment into an engineering design cycle without changing the governing physics?
+
+Mission Mode uses the same `Simulation`, motor, force equations, timestep, and ground event as Sandbox. The game layer follows this one-way chain:
+
+```text
+production simulation
+→ completed FlightResult
+→ objective evaluation
+→ score and stars
+→ results presentation
+```
+
+The score **evaluates** the production result. It never steers the rocket, changes gravity or drag, scales thrust, snaps a trajectory into a target, changes the timestep, or invents a landing. A miss remains a miss, and NO LIFTOFF has no ground-contact position or impact speed.
+
+### The mission engineering loop
+
+```text
+PREDICT    Decide how the allowed variable should affect the objective.
+CONSTRAIN  Identify every fixed value and the one value you may change.
+LAUNCH     Run the unchanged production simulation after the countdown.
+INSPECT    Read the recorded result and objective-by-objective feedback.
+EXPLAIN    Connect success or failure to an implemented force or equation.
+ITERATE    Retry with a purposeful change while holding constraints fixed.
+```
+
+The countdown is presentation time only. Simulation time remains `t=0` until ignition. During flight, an altitude objective may become known once the recorded trajectory reaches it. Ground-contact and impact outcomes remain pending until terminal contact because they do not exist earlier.
+
+### What the five missions teach
+
+| mission | allowed variable | physical question |
+| --- | --- | --- |
+| First Flight | constant vehicle mass | Can the same motor and gravity produce the required recorded apogee? |
+| Precision Landing | fixed world thrust direction | How does splitting the same thrust into horizontal and vertical components change ground-contact position? |
+| Heavy Lift Challenge | constant vehicle mass | How much total constant point mass can the unchanged motor lift above the altitude constraint? |
+| Aerodynamic Challenge | constant `Cd` | How does drag feedback shift ground-contact position into or out of a target band? |
+| Environmental Challenge | constant vehicle mass under fixed low `g` | How must mass change to meet an altitude band when modeled weight is lower? |
+
+“Heavy Lift” does not introduce a payload model. The configured `mass_kg` remains one total constant point mass; there is no dry mass, propellant mass, or separate payload. “Precision Landing” means the simulator's interpolated first descending ground contact. It does not model recovery, bounce, structural survival, or real-world landing safety. Recorded apogee and maximum values are numerical maxima over stored states, not exact continuous-flight extrema.
+
+### Guided mission activity — Precision Landing
+
+#### Predict
+
+Before changing the control, write down:
+
+1. Is the starting `55 deg` direction expected to put more or less thrust horizontally than `60 deg`?
+2. Will increasing the fixed direction increase or decrease the vertical thrust component?
+3. Which values must remain fixed for the comparison to isolate direction?
+
+Remember that the direction is measured counterclockwise from world `+x`. It is a fixed force direction, not simulated rocket attitude.
+
+#### Observe
+
+1. Complete First Flight once to unlock the next mission. Then choose Precision Landing and read the objective, constraints, hint, and scoring rule before configuring.
+2. Run the mission once at its starting `55 deg`. Record ground-contact `x`, recorded apogee, modeled impact speed, and the “missed long/short” explanation.
+3. Retry. Retry preserves the selected allowed value and clears the prior trajectory/result.
+4. Change only the direction by one `5 deg` step and launch again.
+5. Confirm the target is drawn in world coordinates and the landing objective remains pending until ground contact.
+
+Representative production evidence is approximately:
+
+```text
+55 deg → ground-contact x = 19.124 m → beyond the 17.5–18.7 m zone
+60 deg → ground-contact x = 18.118 m → inside the zone
+```
+
+Treat those values as results of the current documented numerical model, not analytical truths or real-flight predictions.
+
+#### Explain
+
+At `60 deg`, the thrust components are:
+
+```text
+F_Tx = T cos(60 deg)
+F_Ty = T sin(60 deg)
+```
+
+Compared with `55 deg`, the horizontal fraction is smaller and the vertical fraction is larger. That changes horizontal acceleration and flight time together, so ground-contact distance is a trajectory result rather than a single-component calculation. The game awards points only after the production run supplies that result.
+
+### Controlled environmental comparison
+
+Environmental Challenge fixes `g=3.71 m/s^2` but does not claim to model a complete planet. With the same `1.0 kg` mass and all other current model values controlled, representative recorded apogees are about:
+
+```text
+default g = 9.81 m/s^2 → 8.10 m
+fixed low g = 3.71 m/s^2 → 30.28 m
+```
+
+That comparison isolates the modeled constant-gravity change. The mission then asks you to retune mass to enter a `20–23 m` band; about `1.2 kg` produces `21.21 m` in the current production model.
+
+### Check your understanding
+
+1. Why must score calculation occur after, rather than inside, the physics update?
+2. Which mission outcomes can become known during ascent, and which must remain pending?
+3. Why is the Heavy Lift configured mass not a payload measurement?
+4. Why can changing only `Cd` alter both drag and later velocity rather than shifting range linearly?
+5. What does Retry preserve, and what does Mission Defaults restore?
+6. Why does a low-gravity mission not by itself model Mars or another complete planet?
+7. What evidence would show that Mission Mode secretly changed physics, and how could a Sandbox/Mission comparison detect it?
 
 ---
 
