@@ -142,6 +142,22 @@ Validation:
 
 The educational bounds deliberately include valid no-liftoff and limiting cases. They are interface choices rather than restrictions on `SimulationConfig` or claims about nature. No automatic run comparison, history, plotting, export, or Prompt 06 physics is included.
 
+## Approved product direction — mission game and staged 3D evolution
+
+Decision 09 establishes a game layer that evaluates validated simulation outcomes without secretly altering the physics.
+
+Preferred product sequence:
+
+1. **Mission Mode and Flight Results** — objectives, constraints, target zones, scoring, retry flow, and results derived from production simulation outputs; no new physical model.
+2. **Run comparison / experiment history** — compare deterministic trajectories and metrics without changing physics.
+3. **2.5D / 3D-style presentation prototype** — richer perspective, terrain/backgrounds, rocket presentation, camera follow, particles, sound, and game feel while retaining the validated current trajectory model.
+4. **True 3D rendering, if justified** — reassess the rendering technology separately from the physics model.
+5. **True 3D flight physics** — only as a later scientific program with explicit 3D coordinates, orientation/rotation, aerodynamic/stability models, numerical validation, and separate approval.
+
+Game mechanics may add missions, scoring, stars, hints, target zones, presentation effects, and progression. They may constrain which existing setup controls a mission exposes. They must not invisibly change thrust, gravity, drag, trajectory, impact, timing, or other validated physical behavior to make the game easier.
+
+The same authoritative simulation should support Sandbox, Missions, and Science Lab experiences. Difficulty should normally change information, constraints, hints, attempts, or scoring rather than the governing equations.
+
 ## Standing cross-cutting requirement — Learning Course impact review
 
 Every future approved milestone must identify whether it changes physics, equations, numerical interpretation, phases/events, Inspector information, educational visualization, controls, or experiments. Applicable chapters of `docs/learning/LEARNING_ROCKETRY_WITH_ROCKETSIM.md` must be revised and the complete course reviewed before that milestone is complete. This requirement may revise earlier chapters rather than merely append a new one.
